@@ -1,5 +1,4 @@
 import React, { useMemo, useState } from 'react';
-import ReactECharts from 'echarts-for-react';
 import BottomNav from '../../components/BottomNav';
 import { useBillStore, useCategoryStore } from '../../stores';
 import { formatAmount } from '../../utils';
@@ -18,6 +17,7 @@ interface WeekGroup {
 interface MonthGroup {
   monthLabel: string;
   month: number;
+  year: number;
   bills: BillRecord[];
   total: number;
 }
@@ -36,32 +36,106 @@ function daysBetween(start: Date, end: Date): number {
   return Math.round((end.getTime() - start.getTime()) / oneDay);
 }
 
+// 格式化日期范围
+function formatDateRange(start: Date, end: Date): string {
+  const startStr = `${start.getMonth() + 1}/${start.getDate()}`;
+  const endStr = `${end.getMonth() + 1}/${end.getDate()}`;
+  return `${startStr} - ${endStr}`;
+}
+
 function AnalysisPage() {
   const bills = useBillStore((state) => state.bills);
   const categories = useCategoryStore((state) => state.categories);
 
   const [viewMode, setViewMode] = useState<ViewMode>('month');
-  const [selectedYear, setSelectedYear] = useState(new Date().getFullYear());
+  const [selectedDate, setSelectedDate] = useState(new Date());
   const [activeTab, setActiveTab] = useState<'expense' | 'income'>('expense');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
 
-  // 年份选项（当前年份前后5年）
-  const yearOptions = useMemo(() => {
-    const years = [];
-    for (let y = selectedYear - 5; y <= selectedYear + 1; y++) {
-      years.push(y);
+  // 获取当前视图的时间范围标签
+  const getTimeLabel = (): string => {
+    const year = selectedDate.getFullYear();
+    const month = selectedDate.getMonth() + 1;
+    
+    if (viewMode === 'week') {
+      const weekStart = getWeekStart(selectedDate);
+      const weekEnd = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+      return `${year}年${formatDateRange(weekStart, weekEnd)}`;
+    } else if (viewMode === 'month') {
+      return `${year}年${month}月`;
+    } else {
+      return `${year}年`;
     }
-    return years;
-  }, [selectedYear]);
+  };
+
+  // 获取上一个时间单位
+  const goToPrevious = () => {
+    const newDate = new Date(selectedDate);
+    if (viewMode === 'week') {
+      newDate.setDate(newDate.getDate() - 7);
+    } else if (viewMode === 'month') {
+      newDate.setMonth(newDate.getMonth() - 1);
+    } else {
+      newDate.setFullYear(newDate.getFullYear() - 1);
+    }
+    setSelectedDate(newDate);
+    setExpandedGroups(new Set());
+  };
+
+  // 获取下一个时间单位
+  const goToNext = () => {
+    const newDate = new Date(selectedDate);
+    if (viewMode === 'week') {
+      newDate.setDate(newDate.getDate() + 7);
+    } else if (viewMode === 'month') {
+      newDate.setMonth(newDate.getMonth() + 1);
+    } else {
+      newDate.setFullYear(newDate.getFullYear() + 1);
+    }
+    setSelectedDate(newDate);
+    setExpandedGroups(new Set());
+  };
+
+  // 判断是否是当前时间单位
+  const isCurrentPeriod = (): boolean => {
+    const now = new Date();
+    if (viewMode === 'week') {
+      const currentWeekStart = getWeekStart(now);
+      const selectedWeekStart = getWeekStart(selectedDate);
+      return currentWeekStart.getTime() === selectedWeekStart.getTime();
+    } else if (viewMode === 'month') {
+      return now.getFullYear() === selectedDate.getFullYear() && 
+             now.getMonth() === selectedDate.getMonth();
+    } else {
+      return now.getFullYear() === selectedDate.getFullYear();
+    }
+  };
+
+  // 跳转到今天/当月/当年
+  const goToToday = () => {
+    setSelectedDate(new Date());
+    setExpandedGroups(new Set());
+  };
 
   // 按时间范围筛选账单
   const filteredBills = useMemo(() => {
+    const year = selectedDate.getFullYear();
     return bills.filter((b) => {
       const date = new Date(b.date);
-      const year = date.getFullYear();
-      return year === selectedYear && !b.deletedAt;
+      const billYear = date.getFullYear();
+      
+      if (viewMode === 'week') {
+        const weekStart = getWeekStart(selectedDate);
+        const weekEnd = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+        return billYear === year && date >= weekStart && date < weekEnd && !b.deletedAt;
+      } else if (viewMode === 'month') {
+        const month = selectedDate.getMonth();
+        return billYear === year && date.getMonth() === month && !b.deletedAt;
+      } else {
+        return billYear === year && !b.deletedAt;
+      }
     });
-  }, [bills, selectedYear]);
+  }, [bills, selectedDate, viewMode]);
 
   // 分离消费和收入
   const expenseBills = useMemo(() => 
@@ -85,40 +159,44 @@ function AnalysisPage() {
   // 按周分组（月视图）
   const weekGroups = useMemo((): WeekGroup[] => {
     const groups: WeekGroup[] = [];
-    const currentYear = selectedYear;
+    const year = selectedDate.getFullYear();
+    const month = selectedDate.getMonth();
     
-    // 找到每年的第1周
-    let date = new Date(currentYear, 0, 1);
+    // 找到该月的第一周
+    let date = new Date(year, month, 1);
     let weekStart = getWeekStart(date);
     
-    while (weekStart.getFullYear() === currentYear) {
-      const weekEnd = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
-      const weekBills = currentBills.filter(b => {
-        const billDate = new Date(b.date);
-        return billDate >= weekStart && billDate <= weekEnd;
-      });
-      
-      if (weekBills.length > 0) {
-        const month = weekStart.getMonth() + 1;
-        const weekNum = Math.ceil(daysBetween(new Date(currentYear, 0, 1), weekStart) / 7) + 1;
-        groups.push({
-          weekLabel: `${month}月第${weekNum}周`,
-          weekStart,
-          weekEnd,
-          bills: weekBills,
-          total: weekBills.reduce((sum, b) => sum + b.amount, 0),
+    while (date.getMonth() === month || weekStart.getMonth() === month) {
+      if (weekStart.getMonth() === month) {
+        const weekEnd = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
+        const weekBills = currentBills.filter(b => {
+          const billDate = new Date(b.date);
+          return billDate >= weekStart && billDate <= weekEnd;
         });
+        
+        if (weekBills.length > 0) {
+          const weekNum = Math.ceil(daysBetween(new Date(year, month, 1), weekStart) / 7) + 1;
+          groups.push({
+            weekLabel: `第${weekNum}周`,
+            weekStart,
+            weekEnd,
+            bills: weekBills,
+            total: weekBills.reduce((sum, b) => sum + b.amount, 0),
+          });
+        }
       }
       
       weekStart = new Date(weekStart.getTime() + 7 * 24 * 60 * 60 * 1000);
+      date = weekStart;
     }
     
     return groups.reverse();
-  }, [currentBills, selectedYear]);
+  }, [currentBills, selectedDate]);
 
   // 按月分组（年视图）
   const monthGroups = useMemo((): MonthGroup[] => {
     const groups: MonthGroup[] = [];
+    const year = selectedDate.getFullYear();
     const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
     
     for (let month = 0; month < 12; month++) {
@@ -131,6 +209,7 @@ function AnalysisPage() {
         groups.push({
           monthLabel: monthNames[month],
           month,
+          year,
           bills: monthBills,
           total: monthBills.reduce((sum, b) => sum + b.amount, 0),
         });
@@ -138,7 +217,7 @@ function AnalysisPage() {
     }
     
     return groups.reverse();
-  }, [currentBills, selectedYear]);
+  }, [currentBills, selectedDate]);
 
   // 按分类统计
   const categoryStats = useMemo(() => {
@@ -176,53 +255,6 @@ function AnalysisPage() {
     [currentBills]
   );
 
-  // 饼图配置
-  const pieOption = useMemo(
-    () => ({
-      tooltip: {
-        trigger: 'item',
-        formatter: '{b}: {c} ({d}%)',
-      },
-      legend: {
-        orient: 'vertical',
-        right: 10,
-        top: 'center',
-        textStyle: {
-          fontSize: 12,
-        },
-      },
-      series: [
-        {
-          type: 'pie',
-          radius: ['40%', '70%'],
-          center: ['35%', '50%'],
-          avoidLabelOverlap: false,
-          itemStyle: {
-            borderRadius: 10,
-            borderColor: '#fff',
-            borderWidth: 2,
-          },
-          label: {
-            show: false,
-          },
-          emphasis: {
-            label: {
-              show: true,
-              fontSize: 14,
-              fontWeight: 'bold',
-            },
-          },
-          data: categoryStats.map((s) => ({
-            value: s.amount,
-            name: s.name,
-            itemStyle: { color: s.color },
-          })),
-        },
-      ],
-    }),
-    [categoryStats]
-  );
-
   // 切换展开
   const toggleExpand = (key: string) => {
     const newExpanded = new Set(expandedGroups);
@@ -244,88 +276,54 @@ function AnalysisPage() {
     };
   };
 
+  // 渲染单条记录
+  const renderBillItem = (bill: BillRecord) => {
+    const cat = getCategoryInfo(bill.category);
+    return (
+      <div
+        key={bill.id}
+        style={{
+          display: 'flex',
+          alignItems: 'center',
+          padding: '10px 0',
+          borderBottom: '1px solid #f5f5f5',
+        }}
+      >
+        <div
+          style={{
+            width: '32px',
+            height: '32px',
+            borderRadius: '8px',
+            backgroundColor: cat.color + '20',
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            fontSize: '16px',
+            marginRight: '10px',
+          }}
+        >
+          {cat.icon}
+        </div>
+        <div style={{ flex: 1, minWidth: 0 }}>
+          <div style={{ fontSize: '14px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+            {bill.description}
+          </div>
+          <div style={{ fontSize: '11px', color: '#999' }}>{cat.name}</div>
+        </div>
+        <div style={{ fontSize: '14px', fontWeight: '500', marginLeft: '8px' }}>
+          {formatAmount(bill.amount)}
+        </div>
+      </div>
+    );
+  };
+
   // 渲染周视图
   const renderWeekView = () => (
-    <div>
-      {weekGroups.map((group, idx) => (
-        <div key={idx} className="card" style={{ marginBottom: '12px' }}>
-          <div
-            style={{
-              display: 'flex',
-              justifyContent: 'space-between',
-              alignItems: 'center',
-              padding: '12px',
-              cursor: 'pointer',
-            }}
-            onClick={() => toggleExpand(`week-${idx}`)}
-          >
-            <div>
-              <div style={{ fontSize: '14px', fontWeight: '500' }}>{group.weekLabel}</div>
-              <div style={{ fontSize: '12px', color: '#999' }}>
-                {group.bills.length} 笔
-              </div>
-            </div>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-              <span style={{ fontWeight: '600' }}>{formatAmount(group.total)}</span>
-              <span style={{ color: '#999' }}>
-                {expandedGroups.has(`week-${idx}`) ? '▲' : '▼'}
-              </span>
-            </div>
-          </div>
-          
-          {expandedGroups.has(`week-${idx}`) && (
-            <div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 12px' }}>
-              {group.bills.map(bill => {
-                const cat = getCategoryInfo(bill.category);
-                return (
-                  <div
-                    key={bill.id}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: '8px 0',
-                      borderBottom: '1px solid #f0f0f0',
-                    }}
-                  >
-                    <div
-                      style={{
-                        width: '28px',
-                        height: '28px',
-                        borderRadius: '6px',
-                        backgroundColor: cat.color + '20',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
-                        fontSize: '14px',
-                        marginRight: '8px',
-                      }}
-                    >
-                      {cat.icon}
-                    </div>
-                    <div style={{ flex: 1 }}>
-                      <div style={{ fontSize: '13px' }}>{bill.description}</div>
-                      <div style={{ fontSize: '11px', color: '#999' }}>{cat.name}</div>
-                    </div>
-                    <div style={{ fontSize: '14px', fontWeight: '500' }}>
-                      {formatAmount(bill.amount)}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          )}
-        </div>
-      ))}
-    </div>
-  );
-
-  // 渲染月视图
-  const renderMonthView = () => (
     <div>
       {weekGroups.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">📅</div>
-          <div className="empty-text">暂无数据</div>
+          <div className="empty-text">本周暂无数据</div>
         </div>
       ) : (
         weekGroups.map((group, idx) => (
@@ -343,56 +341,66 @@ function AnalysisPage() {
               <div>
                 <div style={{ fontSize: '14px', fontWeight: '500' }}>{group.weekLabel}</div>
                 <div style={{ fontSize: '12px', color: '#999' }}>
-                  {group.bills.length} 笔
+                  {formatDateRange(group.weekStart, group.weekEnd)} · {group.bills.length} 笔
                 </div>
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontWeight: '600' }}>{formatAmount(group.total)}</span>
-                <span style={{ color: '#999' }}>
+                <span style={{ color: '#999', fontSize: '12px' }}>
                   {expandedGroups.has(`week-${idx}`) ? '▲' : '▼'}
                 </span>
               </div>
             </div>
             
             {expandedGroups.has(`week-${idx}`) && (
-              <div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 12px' }}>
-                {group.bills.map(bill => {
-                  const cat = getCategoryInfo(bill.category);
-                  return (
-                    <div
-                      key={bill.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '8px 0',
-                        borderBottom: '1px solid #f0f0f0',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '6px',
-                          backgroundColor: cat.color + '20',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '14px',
-                          marginRight: '8px',
-                        }}
-                      >
-                        {cat.icon}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '13px' }}>{bill.description}</div>
-                        <div style={{ fontSize: '11px', color: '#999' }}>{cat.name}</div>
-                      </div>
-                      <div style={{ fontSize: '14px', fontWeight: '500' }}>
-                        {formatAmount(bill.amount)}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div style={{ borderTop: '1px solid #f5f5f5', padding: '0 12px 8px' }}>
+                {group.bills.map(renderBillItem)}
+              </div>
+            )}
+          </div>
+        ))
+      )}
+    </div>
+  );
+
+  // 渲染月视图
+  const renderMonthView = () => (
+    <div>
+      {weekGroups.length === 0 ? (
+        <div className="empty-state">
+          <div className="empty-icon">📅</div>
+          <div className="empty-text">本月暂无数据</div>
+        </div>
+      ) : (
+        weekGroups.map((group, idx) => (
+          <div key={idx} className="card" style={{ marginBottom: '12px' }}>
+            <div
+              style={{
+                display: 'flex',
+                justifyContent: 'space-between',
+                alignItems: 'center',
+                padding: '12px',
+                cursor: 'pointer',
+              }}
+              onClick={() => toggleExpand(`week-${idx}`)}
+            >
+              <div>
+                <div style={{ fontSize: '14px', fontWeight: '500' }}>{group.weekLabel}</div>
+                <div style={{ fontSize: '12px', color: '#999' }}>
+                  {formatDateRange(group.weekStart, group.weekEnd)} · {group.bills.length} 笔
+                </div>
+              </div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+                <span style={{ fontWeight: '600' }}>{formatAmount(group.total)}</span>
+                <span style={{ color: '#999', fontSize: '12px' }}>
+                  {expandedGroups.has(`week-${idx}`) ? '▲' : '▼'}
+                </span>
+              </div>
+            </div>
+            
+            {expandedGroups.has(`week-${idx}`) && (
+              <div style={{ borderTop: '1px solid #f5f5f5', padding: '0 12px 8px' }}>
+                {group.bills.map(renderBillItem)}
               </div>
             )}
           </div>
@@ -407,7 +415,7 @@ function AnalysisPage() {
       {monthGroups.length === 0 ? (
         <div className="empty-state">
           <div className="empty-icon">📅</div>
-          <div className="empty-text">暂无数据</div>
+          <div className="empty-text">本年暂无数据</div>
         </div>
       ) : (
         monthGroups.map((group, idx) => (
@@ -430,51 +438,15 @@ function AnalysisPage() {
               </div>
               <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
                 <span style={{ fontWeight: '600' }}>{formatAmount(group.total)}</span>
-                <span style={{ color: '#999' }}>
+                <span style={{ color: '#999', fontSize: '12px' }}>
                   {expandedGroups.has(`month-${idx}`) ? '▲' : '▼'}
                 </span>
               </div>
             </div>
             
             {expandedGroups.has(`month-${idx}`) && (
-              <div style={{ borderTop: '1px solid #f0f0f0', padding: '8px 12px' }}>
-                {group.bills.map(bill => {
-                  const cat = getCategoryInfo(bill.category);
-                  return (
-                    <div
-                      key={bill.id}
-                      style={{
-                        display: 'flex',
-                        alignItems: 'center',
-                        padding: '8px 0',
-                        borderBottom: '1px solid #f0f0f0',
-                      }}
-                    >
-                      <div
-                        style={{
-                          width: '28px',
-                          height: '28px',
-                          borderRadius: '6px',
-                          backgroundColor: cat.color + '20',
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          fontSize: '14px',
-                          marginRight: '8px',
-                        }}
-                      >
-                        {cat.icon}
-                      </div>
-                      <div style={{ flex: 1 }}>
-                        <div style={{ fontSize: '13px' }}>{bill.description}</div>
-                        <div style={{ fontSize: '11px', color: '#999' }}>{cat.name}</div>
-                      </div>
-                      <div style={{ fontSize: '14px', fontWeight: '500' }}>
-                        {formatAmount(bill.amount)}
-                      </div>
-                    </div>
-                  );
-                })}
+              <div style={{ borderTop: '1px solid #f5f5f5', padding: '0 12px 8px' }}>
+                {group.bills.map(renderBillItem)}
               </div>
             )}
           </div>
@@ -492,94 +464,82 @@ function AnalysisPage() {
 
       {/* 内容 */}
       <div className="page-content">
-        {/* 年份选择 */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '16px' }}>
-          <button
-            className="btn btn-outline"
-            style={{ padding: '6px 12px' }}
-            onClick={() => setSelectedYear(y => y - 1)}
-          >
-            ◀
-          </button>
-          <select
-            value={selectedYear}
-            onChange={(e) => setSelectedYear(parseInt(e.target.value))}
-            style={{
-              flex: 1,
-              padding: '8px 12px',
-              border: '1px solid #ddd',
-              borderRadius: '8px',
-              fontSize: '14px',
-              textAlign: 'center',
-              background: 'white',
-            }}
-          >
-            {yearOptions.map(y => (
-              <option key={y} value={y}>{y}年</option>
-            ))}
-          </select>
-          <button
-            className="btn btn-outline"
-            style={{ padding: '6px 12px' }}
-            onClick={() => setSelectedYear(y => y + 1)}
-          >
-            ▶
-          </button>
-        </div>
-
-        {/* 时间筛选 */}
-        <div
-          style={{
-            display: 'flex',
-            gap: '8px',
-            marginBottom: '16px',
-          }}
-        >
-          {(['week', 'month', 'year'] as const).map((range) => (
+        {/* 时间导航 */}
+        <div style={{ 
+          background: 'white', 
+          borderRadius: '12px', 
+          padding: '12px', 
+          marginBottom: '16px',
+          boxShadow: '0 2px 8px rgba(0,0,0,0.06)'
+        }}>
+          {/* 导航行 */}
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '12px' }}>
             <button
-              key={range}
-              className={`btn ${viewMode === range ? 'btn-primary' : 'btn-outline'}`}
-              style={{
-                flex: 1,
-                padding: '8px',
-                fontSize: '14px',
-              }}
-              onClick={() => {
-                setViewMode(range);
-                setExpandedGroups(new Set());
-              }}
+              className="btn btn-outline"
+              style={{ width: '40px', height: '40px', padding: '0', borderRadius: '50%' }}
+              onClick={goToPrevious}
             >
-              {range === 'week' ? '按周' : range === 'month' ? '按月' : '按年'}
+              ◀
             </button>
-          ))}
+            
+            <div style={{ textAlign: 'center', flex: 1 }}>
+              <div style={{ fontSize: '18px', fontWeight: '600' }}>{getTimeLabel()}</div>
+              {!isCurrentPeriod() && (
+                <button
+                  onClick={goToToday}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#667eea',
+                    fontSize: '12px',
+                    cursor: 'pointer',
+                    marginTop: '2px'
+                  }}
+                >
+                  跳转到今天
+                </button>
+              )}
+            </div>
+            
+            <button
+              className="btn btn-outline"
+              style={{ width: '40px', height: '40px', padding: '0', borderRadius: '50%' }}
+              onClick={goToNext}
+            >
+              ▶
+            </button>
+          </div>
+
+          {/* 视图切换 */}
+          <div style={{ display: 'flex', gap: '8px' }}>
+            {(['week', 'month', 'year'] as const).map((range) => (
+              <button
+                key={range}
+                className={`btn ${viewMode === range ? 'btn-primary' : 'btn-outline'}`}
+                style={{ flex: 1, padding: '10px 8px' }}
+                onClick={() => {
+                  setViewMode(range);
+                  setExpandedGroups(new Set());
+                }}
+              >
+                {range === 'week' ? '按周' : range === 'month' ? '按月' : '按年'}
+              </button>
+            ))}
+          </div>
         </div>
 
         {/* Tab 切换 */}
-        <div
-          style={{
-            display: 'flex',
-            gap: '8px',
-            marginBottom: '16px',
-          }}
-        >
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '16px' }}>
           <button
             className={`btn ${activeTab === 'expense' ? 'btn-primary' : 'btn-outline'}`}
-            style={{
-              flex: 1,
-              padding: '10px',
-              fontSize: '14px',
-            }}
+            style={{ flex: 1, padding: '10px' }}
             onClick={() => setActiveTab('expense')}
           >
             消费
           </button>
           <button
             className={`btn ${activeTab === 'income' ? 'btn-primary' : 'btn-outline'}`}
-            style={{
-              flex: 1,
-              padding: '10px',
-              fontSize: '14px',
-            }}
+            style={{ flex: 1, padding: '10px' }}
             onClick={() => setActiveTab('income')}
           >
             收入
@@ -595,18 +555,43 @@ function AnalysisPage() {
           </div>
         </div>
 
-        {/* 饼图 */}
+        {/* 分类占比 */}
         {categoryStats.length > 0 && (
-          <div className="chart-container">
-            <div className="chart-title">{activeTab === 'expense' ? '消费' : '收入'}分类占比</div>
-            <ReactECharts option={pieOption} style={{ height: '200px' }} />
+          <div style={{ marginTop: '16px' }}>
+            <div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '12px' }}>
+              分类占比
+            </div>
+            <div className="card">
+              {categoryStats.slice(0, 5).map((stat) => (
+                <div key={stat.categoryId} style={{ marginBottom: '12px' }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '4px' }}>
+                    <span style={{ fontSize: '13px' }}>
+                      {stat.icon} {stat.name}
+                    </span>
+                    <span style={{ fontSize: '13px', fontWeight: '500' }}>
+                      {formatAmount(stat.amount)} ({stat.percentage.toFixed(0)}%)
+                    </span>
+                  </div>
+                  <div style={{ height: '6px', background: '#f0f0f0', borderRadius: '3px', overflow: 'hidden' }}>
+                    <div
+                      style={{
+                        width: `${stat.percentage}%`,
+                        height: '100%',
+                        background: stat.color,
+                        borderRadius: '3px',
+                      }}
+                    />
+                  </div>
+                </div>
+              ))}
+            </div>
           </div>
         )}
 
         {/* 列表视图 */}
         <div style={{ marginTop: '16px' }}>
           <div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '12px' }}>
-            {viewMode === 'week' ? '本周记录' : viewMode === 'month' ? '按周聚合' : '按月聚合'}
+            {viewMode === 'week' ? '本周' : viewMode === 'month' ? '按周聚合' : '按月聚合'}
             <span style={{ fontSize: '12px', color: '#999', fontWeight: 'normal' }}>
               （点击展开查看详情）
             </span>
