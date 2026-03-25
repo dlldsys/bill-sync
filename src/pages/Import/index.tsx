@@ -3,9 +3,9 @@ import { useNavigate } from 'react-router-dom';
 import { Button, Toast } from 'antd-mobile';
 import BottomNav from '../../components/BottomNav';
 import { useBillStore, useCategoryStore } from '../../stores';
-import { recognizeText, parseBillText } from '../../services/ocr';
+import { recognizeText, parseBillTextWithAutoMatch, parseBillText, type ParseBillResult } from '../../services/ocr';
 import { generateId, now, getDeviceId } from '../../utils';
-import type { BillRecord, OCRResult, ParsedBill } from '../../types';
+import type { BillRecord, OCRResult } from '../../types';
 
 function ImportPage() {
   const navigate = useNavigate();
@@ -16,7 +16,7 @@ function ImportPage() {
   const [files, setFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
   const [ocrResults, setOcrResults] = useState<OCRResult[]>([]);
-  const [parsedBills, setParsedBills] = useState<ParsedBill[]>([]);
+  const [parsedBills, setParsedBills] = useState<ParseBillResult[]>([]);
   const [progress, setProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
@@ -43,7 +43,7 @@ function ImportPage() {
     if (droppedFiles.length === 0) return;
 
     setFiles(droppedFiles);
-    setPreviewUrls(droppedFiles.map((f) => URL.createObjectURL(droppedFiles[0])));
+    setPreviewUrls(droppedFiles.map((f) => URL.createObjectURL(f)));
     setOcrResults([]);
     setParsedBills([]);
     setCurrentImageIndex(0);
@@ -61,19 +61,27 @@ function ImportPage() {
 
     try {
       const results: OCRResult[] = [];
-      const allParsed: ParsedBill[] = [];
+      const allParsed: ParseBillResult[] = [];
 
-      for (let i = 0; i < files.length; i++) {
-        const result = await recognizeText(files[i]);
+      for (const file of files) {
+        const result = await recognizeText(file);
         results.push(result);
-        const parsed = parseBillText(result.text);
+        // 使用新的自动匹配分类函数
+        const parsed = await parseBillTextWithAutoMatch(result.text);
         allParsed.push(...parsed);
-        setProgress(Math.round(((i + 1) / files.length) * 100));
+        setProgress(Math.round(((results.length) / files.length) * 100));
       }
 
       setOcrResults(results);
       setParsedBills(allParsed);
-      Toast.show(`识别完成，共 ${allParsed.length} 条记录`);
+      
+      // 统计自动匹配成功的数量
+      const matchedCount = allParsed.filter(p => p.matchedCategoryId).length;
+      if (matchedCount > 0) {
+        Toast.show(`识别完成，共 ${allParsed.length} 条记录（自动匹配 ${matchedCount} 条）`);
+      } else {
+        Toast.show(`识别完成，共 ${allParsed.length} 条记录`);
+      }
     } catch (error) {
       console.error('OCR error:', error);
       Toast.show('识别失败，请重试');
@@ -83,9 +91,9 @@ function ImportPage() {
   };
 
   // 修改解析结果
-  const updateParsedBill = (index: number, field: keyof ParsedBill, value: string | number) => {
+  const updateParsedBill = (index: number, field: string, value: string | number) => {
     const updated = [...parsedBills];
-    updated[index] = { ...updated[index], [field]: value };
+    (updated[index] as any)[field] = value;
     setParsedBills(updated);
   };
 
@@ -106,13 +114,33 @@ function ImportPage() {
     setIsSaving(true);
     try {
       const deviceId = getDeviceId();
-
-      // 匹配识别的类目到系统类目
+      
+      // 分离支出和收入分类
+      const expenseCategories = categories.filter(c => !c.type || c.type === 'expense');
+      const incomeCategories = categories.filter(c => c.type === 'income');
+      
+      // 直接使用parsedBills中的数据，保留自动匹配的分类信息
       const bills: BillRecord[] = parsedBills.map((parsed, index) => {
-        // 尝试匹配类目
-        let matchedCategory = categories[0]?.id || '';
-        if (parsed.category) {
-          const matched = categories.find(c => 
+        // 根据billType选择对应类型的分类
+        const targetCategories = !parsed.billType || parsed.billType === 'expense' 
+          ? expenseCategories 
+          : incomeCategories;
+        
+        // 如果有自动匹配的分类ID，检查是否匹配类型
+        let matchedCategory = '';
+        if (parsed.matchedCategoryId) {
+          const matchedCat = categories.find(c => c.id === parsed.matchedCategoryId);
+          if (matchedCat) {
+            // 如果分类类型匹配，使用该分类
+            if (!matchedCat.type || matchedCat.type === parsed.billType || !parsed.billType) {
+              matchedCategory = matchedCat.id;
+            }
+          }
+        }
+        
+        // 如果没有匹配到分类，尝试通过名称匹配
+        if (!matchedCategory && parsed.category) {
+          const matched = targetCategories.find(c => 
             c.name.includes(parsed.category!) ||
             parsed.category!.includes(c.name)
           );
@@ -120,15 +148,20 @@ function ImportPage() {
             matchedCategory = matched.id;
           }
         }
+        
+        // 如果还是没有匹配，使用对应类型的第一个分类
+        if (!matchedCategory && targetCategories.length > 0) {
+          matchedCategory = targetCategories[0].id;
+        }
 
         return {
           id: generateId(),
           amount: parsed.amount || 0,
           category: matchedCategory,
-          description: parsed.description || `图片${index + 1}`,
+          description: parsed.description || `记录${index + 1}`,
           date: parsed.date || now(),
           source: 'ocr' as const,
-          rawText: ocrResults[currentImageIndex]?.text,
+          rawText: parsed.merchant ? `商家：${parsed.merchant}\n${parsed.description}` : parsed.description,
           createdAt: now(),
           updatedAt: now(),
           deviceId,
@@ -249,7 +282,11 @@ function ImportPage() {
                         borderRadius: '4px',
                         padding: '0 4px',
                       }}>
-                        {parsedBills.filter((_, i) => i >= getStartIndex(index) && i < getStartIndex(index + 1)).length}
+                        {(() => {
+                      const currentOCR = ocrResults[index];
+                      if (!currentOCR) return 0;
+                      return parseBillText(currentOCR.text).length;
+                    })()}
                       </div>
                     )}
                     <button
@@ -351,15 +388,46 @@ function ImportPage() {
                   alignItems: 'center',
                 }}>
                   <span>识别结果 ({parsedBills.length} 条)</span>
-                  <span style={{ fontSize: '12px', color: '#999', fontWeight: 'normal' }}>
-                    点击编辑
-                  </span>
+                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                    {/* 批量修改收支类型 */}
+                    <div style={{ display: 'flex', gap: '4px' }}>
+                      <button
+                        className="btn btn-outline"
+                        style={{ fontSize: '11px', padding: '4px 8px' }}
+                        onClick={() => {
+                          const updated = parsedBills.map(b => ({ ...b, billType: 'expense' as const }));
+                          setParsedBills(updated);
+                          Toast.show('已批量设为支出');
+                        }}
+                      >
+                        全部支出
+                      </button>
+                      <button
+                        className="btn btn-outline"
+                        style={{ fontSize: '11px', padding: '4px 8px' }}
+                        onClick={() => {
+                          const updated = parsedBills.map(b => ({ ...b, billType: 'income' as const }));
+                          setParsedBills(updated);
+                          Toast.show('已批量设为收入');
+                        }}
+                      >
+                        全部收入
+                      </button>
+                    </div>
+                  </div>
                 </div>
                 
                 {/* 显示当前图片的识别结果 */}
                 {(() => {
+                  const currentOCR = ocrResults[currentImageIndex];
+                  if (!currentOCR) return null;
+                  
+                  // 计算当前图片的记录在全局数组中的起始和结束索引
                   const startIdx = getStartIndex(currentImageIndex);
-                  const endIdx = getStartIndex(currentImageIndex + 1);
+                  const endIdx = currentImageIndex < ocrResults.length - 1 
+                    ? getStartIndex(currentImageIndex + 1)
+                    : parsedBills.length;
+                  
                   const currentResults = parsedBills.slice(startIdx, endIdx);
                   
                   return currentResults.map((parsed, localIdx) => {
@@ -467,6 +535,27 @@ function ImportPage() {
                               fontSize: '14px',
                             }}
                           />
+                        </div>
+
+                        {/* 收支类型选择 */}
+                        <div style={{ marginBottom: '8px' }}>
+                          <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>类型</div>
+                          <div style={{ display: 'flex', gap: '8px' }}>
+                            <button
+                              className={`btn ${!parsed.billType || parsed.billType === 'expense' ? 'btn-primary' : 'btn-outline'}`}
+                              style={{ flex: 1, fontSize: '12px', padding: '6px' }}
+                              onClick={() => updateParsedBill(globalIdx, 'billType', 'expense')}
+                            >
+                              支出
+                            </button>
+                            <button
+                              className={`btn ${parsed.billType === 'income' ? 'btn-primary' : 'btn-outline'}`}
+                              style={{ flex: 1, fontSize: '12px', padding: '6px' }}
+                              onClick={() => updateParsedBill(globalIdx, 'billType', 'income')}
+                            >
+                              收入
+                            </button>
+                          </div>
                         </div>
                         
                         <div>

@@ -20,11 +20,16 @@ function CategoriesPage() {
     name: '',
     icon: '📦',
     color: '#85929E',
+    type: 'expense' as 'income' | 'expense',
   });
+
+  // 分离消费和收入分类（兼容没有type字段的旧数据）
+  const expenseCategories = categories.filter(c => !c.type || c.type === 'expense');
+  const incomeCategories = categories.filter(c => c.type === 'income');
 
   const openAddModal = () => {
     setEditingCategory(null);
-    setFormData({ name: '', icon: '📦', color: '#85929E' });
+    setFormData({ name: '', icon: '📦', color: '#85929E', type: 'expense' });
     setShowModal(true);
   };
 
@@ -34,6 +39,7 @@ function CategoriesPage() {
       name: category.name,
       icon: category.icon,
       color: category.color,
+      type: category.type || 'expense',
     });
     setShowModal(true);
   };
@@ -101,75 +107,163 @@ function CategoriesPage() {
 
       {/* 内容 */}
       <div className="page-content">
-        {/* 分类列表 */}
-        <div className="card">
-          {categories.map((category) => (
-            <div
-              key={category.id}
-              style={{
-                display: 'flex',
-                alignItems: 'center',
-                padding: '12px 0',
-                borderBottom: '1px solid #f0f0f0',
-              }}
-            >
+        {/* 消费分类 */}
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ 
+            fontSize: '14px', 
+            fontWeight: '600', 
+            color: '#666',
+            marginBottom: '8px',
+            paddingLeft: '4px',
+          }}>
+            支出分类
+          </div>
+          <div className="card">
+            {expenseCategories.map((category) => (
               <div
+                key={category.id}
                 style={{
-                  width: '40px',
-                  height: '40px',
-                  borderRadius: '10px',
-                  backgroundColor: category.color + '20',
                   display: 'flex',
                   alignItems: 'center',
-                  justifyContent: 'center',
-                  fontSize: '20px',
-                  marginRight: '12px',
+                  padding: '12px 0',
+                  borderBottom: '1px solid #f0f0f0',
                 }}
               >
-                {category.icon}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: '15px', fontWeight: '500' }}>
-                  {category.name}
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
+                    backgroundColor: category.color + '20',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px',
+                    marginRight: '12px',
+                  }}
+                >
+                  {category.icon}
                 </div>
-                {category.isDefault && (
-                  <div style={{ fontSize: '12px', color: '#999' }}>默认分类</div>
-                )}
-              </div>
-              <button
-                onClick={() => openEditModal(category)}
-                style={{
-                  background: 'none',
-                  border: 'none',
-                  color: '#667eea',
-                  fontSize: '14px',
-                  cursor: 'pointer',
-                  marginRight: '12px',
-                }}
-              >
-                编辑
-              </button>
-              {!category.isDefault && (
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '15px', fontWeight: '500' }}>
+                    {category.name}
+                  </div>
+                  {category.isDefault && (
+                    <div style={{ fontSize: '12px', color: '#999' }}>默认分类</div>
+                  )}
+                </div>
                 <button
-                  onClick={() => handleDelete(category)}
+                  onClick={() => openEditModal(category)}
                   style={{
                     background: 'none',
                     border: 'none',
-                    color: '#F4333C',
+                    color: '#667eea',
                     fontSize: '14px',
                     cursor: 'pointer',
+                    marginRight: '12px',
                   }}
                 >
-                  删除
+                  编辑
                 </button>
-              )}
-            </div>
-          ))}
+                {!category.isDefault && (
+                  <button
+                    onClick={() => handleDelete(category)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#F4333C',
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    删除
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* 收入分类 */}
+        <div style={{ marginBottom: '20px' }}>
+          <div style={{ 
+            fontSize: '14px', 
+            fontWeight: '600', 
+            color: '#666',
+            marginBottom: '8px',
+            paddingLeft: '4px',
+          }}>
+            收入分类
+          </div>
+          <div className="card">
+            {incomeCategories.map((category, index) => (
+              <div
+                key={category.id}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  padding: '12px 0',
+                  borderBottom: index < incomeCategories.length - 1 ? '1px solid #f0f0f0' : 'none',
+                }}
+              >
+                <div
+                  style={{
+                    width: '40px',
+                    height: '40px',
+                    borderRadius: '10px',
+                    backgroundColor: category.color + '20',
+                    display: 'flex',
+                    alignItems: 'center',
+                    justifyContent: 'center',
+                    fontSize: '20px',
+                    marginRight: '12px',
+                  }}
+                >
+                  {category.icon}
+                </div>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: '15px', fontWeight: '500' }}>
+                    {category.name}
+                  </div>
+                  {category.isDefault && (
+                    <div style={{ fontSize: '12px', color: '#999' }}>默认分类</div>
+                  )}
+                </div>
+                <button
+                  onClick={() => openEditModal(category)}
+                  style={{
+                    background: 'none',
+                    border: 'none',
+                    color: '#667eea',
+                    fontSize: '14px',
+                    cursor: 'pointer',
+                    marginRight: '12px',
+                  }}
+                >
+                  编辑
+                </button>
+                {!category.isDefault && (
+                  <button
+                    onClick={() => handleDelete(category)}
+                    style={{
+                      background: 'none',
+                      border: 'none',
+                      color: '#F4333C',
+                      fontSize: '14px',
+                      cursor: 'pointer',
+                    }}
+                  >
+                    删除
+                  </button>
+                )}
+              </div>
+            ))}
+          </div>
         </div>
 
         {/* 添加按钮 */}
         <button
-          className="btn btn-outline btn-block"
+          className="btn btn-primary btn-block"
           style={{ marginTop: '16px' }}
           onClick={openAddModal}
         >
@@ -196,6 +290,27 @@ function CategoriesPage() {
         }}
         content={
           <div style={{ padding: '16px 0' }}>
+            {/* 类型选择 */}
+            <div className="form-group">
+              <label className="form-label">分类类型</label>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className={`btn ${formData.type === 'expense' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setFormData({ ...formData, type: 'expense' })}
+                >
+                  支出
+                </button>
+                <button
+                  className={`btn ${formData.type === 'income' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setFormData({ ...formData, type: 'income' })}
+                >
+                  收入
+                </button>
+              </div>
+            </div>
+
             {/* 名称 */}
             <div className="form-group">
               <label className="form-label">分类名称</label>

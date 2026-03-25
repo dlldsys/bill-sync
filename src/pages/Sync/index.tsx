@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { Toast } from 'antd-mobile';
@@ -7,7 +7,6 @@ import { useSyncStore } from '../../stores/syncStore';
 import { useBillStore, useCategoryStore } from '../../stores';
 import { requestSync, resolveConflict } from '../../services/sync';
 import { formatDateTime, getDeviceId, getLocalIP } from '../../utils';
-import type { ConflictRecord } from '../../types';
 
 function SyncPage() {
   const navigate = useNavigate();
@@ -78,7 +77,7 @@ function SyncPage() {
     
     try {
       const ws = new WebSocket(wsUrl);
-      
+       
       ws.onopen = () => {
         // 发送握手
         ws.send(JSON.stringify({
@@ -104,7 +103,9 @@ function SyncPage() {
             }]);
             Toast.show('连接成功');
           }
-        } catch {}
+        } catch {
+          // 忽略错误
+        }
       };
 
       ws.onerror = () => {
@@ -354,9 +355,6 @@ function SyncPage() {
                   <div
                     key={index}
                     style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      padding: '12px',
                       background: '#f5f5f5',
                       borderRadius: '8px',
                       marginBottom: '8px',
@@ -411,14 +409,13 @@ function SyncPage() {
                 <button
                   className="btn btn-primary"
                   style={{ flex: 1 }}
-                  onClick={handleSync}
                   disabled={isSyncing || connectedDevices.length === 0}
+                  onClick={handleSync}
                 >
                   {isSyncing ? '同步中...' : '同步数据'}
                 </button>
               </div>
 
-              {/* 统计 */}
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '12px', marginTop: '16px' }}>
                 <div style={{ textAlign: 'center', padding: '12px', background: '#f5f5f5', borderRadius: '8px' }}>
                   <div style={{ fontSize: '24px', fontWeight: 'bold' }}>{bills.length}</div>

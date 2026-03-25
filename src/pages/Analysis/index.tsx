@@ -9,6 +9,7 @@ function AnalysisPage() {
   const categories = useCategoryStore((state) => state.categories);
 
   const [dateRange, setDateRange] = useState<'week' | 'month' | 'year'>('month');
+  const [activeTab, setActiveTab] = useState<'expense' | 'income'>('expense');
 
   // 按时间范围筛选账单
   const filteredBills = useMemo(() => {
@@ -32,11 +33,28 @@ function AnalysisPage() {
     );
   }, [bills, dateRange]);
 
-  // 按分类统计
-  const categoryStats = useMemo(() => {
+  // 分离消费和收入（兼容没有type字段的旧分类）
+  const expenseBills = useMemo(() => 
+    filteredBills.filter(b => {
+      const category = categories.find(c => c.id === b.category);
+      return !category?.type || category?.type === 'expense';
+    }),
+    [filteredBills, categories]
+  );
+
+  const incomeBills = useMemo(() => 
+    filteredBills.filter(b => {
+      const category = categories.find(c => c.id === b.category);
+      return category?.type === 'income';
+    }),
+    [filteredBills, categories]
+  );
+
+  // 按分类统计（消费）
+  const expenseStats = useMemo(() => {
     const stats: Record<string, { amount: number; count: number }> = {};
 
-    filteredBills.forEach((bill) => {
+    expenseBills.forEach((bill) => {
       if (!stats[bill.category]) {
         stats[bill.category] = { amount: 0, count: 0 };
       }
@@ -60,12 +78,46 @@ function AnalysisPage() {
         };
       })
       .sort((a, b) => b.amount - a.amount);
-  }, [filteredBills, categories]);
+  }, [expenseBills, categories]);
 
-  // 总消费
+  // 按分类统计（收入）
+  const incomeStats = useMemo(() => {
+    const stats: Record<string, { amount: number; count: number }> = {};
+
+    incomeBills.forEach((bill) => {
+      if (!stats[bill.category]) {
+        stats[bill.category] = { amount: 0, count: 0 };
+      }
+      stats[bill.category].amount += bill.amount;
+      stats[bill.category].count += 1;
+    });
+
+    const total = Object.values(stats).reduce((sum, s) => sum + s.amount, 0);
+
+    return Object.entries(stats)
+      .map(([categoryId, data]) => {
+        const category = categories.find((c) => c.id === categoryId);
+        return {
+          categoryId,
+          name: category?.name || '未分类',
+          icon: category?.icon || '📦',
+          color: category?.color || '#85929E',
+          amount: data.amount,
+          count: data.count,
+          percentage: total > 0 ? (data.amount / total) * 100 : 0,
+        };
+      })
+      .sort((a, b) => b.amount - a.amount);
+  }, [incomeBills, categories]);
+
+  // 当前显示的统计数据
+  const currentStats = activeTab === 'expense' ? expenseStats : incomeStats;
+  const currentBills = activeTab === 'expense' ? expenseBills : incomeBills;
+
+  // 总金额
   const totalAmount = useMemo(
-    () => filteredBills.reduce((sum, b) => sum + b.amount, 0),
-    [filteredBills]
+    () => currentBills.reduce((sum, b) => sum + b.amount, 0),
+    [currentBills]
   );
 
   // 饼图配置
@@ -104,7 +156,7 @@ function AnalysisPage() {
               fontWeight: 'bold',
             },
           },
-          data: categoryStats.map((s) => ({
+          data: currentStats.map((s) => ({
             value: s.amount,
             name: s.name,
             itemStyle: { color: s.color },
@@ -112,15 +164,14 @@ function AnalysisPage() {
         },
       ],
     }),
-    [categoryStats]
+    [currentStats]
   );
-
 
   return (
     <div className="page">
       {/* 头部 */}
       <div className="page-header">
-        <h1>消费分析</h1>
+        <h1>收支分析</h1>
       </div>
 
       {/* 内容 */}
@@ -149,26 +200,58 @@ function AnalysisPage() {
           ))}
         </div>
 
-        {/* 总消费 */}
+        {/* Tab 切换 */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '8px',
+            marginBottom: '16px',
+          }}
+        >
+          <button
+            className={`btn ${activeTab === 'expense' ? 'btn-primary' : 'btn-outline'}`}
+            style={{
+              flex: 1,
+              padding: '10px',
+              fontSize: '14px',
+            }}
+            onClick={() => setActiveTab('expense')}
+          >
+            消费占比
+          </button>
+          <button
+            className={`btn ${activeTab === 'income' ? 'btn-primary' : 'btn-outline'}`}
+            style={{
+              flex: 1,
+              padding: '10px',
+              fontSize: '14px',
+            }}
+            onClick={() => setActiveTab('income')}
+          >
+            收入占比
+          </button>
+        </div>
+
+        {/* 总金额 */}
         <div className="stats-card">
-          <div className="stats-title">总消费</div>
+          <div className="stats-title">{activeTab === 'expense' ? '总消费' : '总收入'}</div>
           <div className="stats-value">{formatAmount(totalAmount)}</div>
           <div className="stats-sub">
-            {filteredBills.length} 笔 · {categoryStats.length} 个分类
+            {currentBills.length} 笔 · {currentStats.length} 个分类
           </div>
         </div>
 
         {/* 饼图 */}
-        {categoryStats.length > 0 && (
+        {currentStats.length > 0 && (
           <>
             <div className="chart-container">
-              <div className="chart-title">消费占比</div>
+              <div className="chart-title">{activeTab === 'expense' ? '消费' : '收入'}分类占比</div>
               <ReactECharts option={pieOption} style={{ height: '250px' }} />
             </div>
 
             <div className="chart-container">
               <div className="chart-title">分类详情</div>
-              {categoryStats.map((stat) => (
+              {currentStats.map((stat) => (
                 <div
                   key={stat.categoryId}
                   style={{
@@ -215,10 +298,10 @@ function AnalysisPage() {
           </>
         )}
 
-        {categoryStats.length === 0 && (
+        {currentStats.length === 0 && (
           <div className="empty-state">
             <div className="empty-icon">📊</div>
-            <div className="empty-text">暂无消费数据</div>
+            <div className="empty-text">暂无{activeTab === 'expense' ? '消费' : '收入'}数据</div>
           </div>
         )}
       </div>

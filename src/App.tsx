@@ -7,13 +7,16 @@ import zhCN from 'antd-mobile/es/locales/en-US';
 import HomePage from './pages/Home';
 import ImportPage from './pages/Import';
 import ManualEntryPage from './pages/ManualEntry';
+import EditBillPage from './pages/EditBill';
 import AnalysisPage from './pages/Analysis';
 import CategoriesPage from './pages/Categories';
 import SettingsPage from './pages/Settings';
 import SyncPage from './pages/Sync';
+import CategoryRulesPage from './pages/CategoryRules';
 
 // 样式
 import './App.css';
+import { ToastProvider } from './components/CustomToast';
 
 // 初始化数据库
 import { initDatabase } from './services/database';
@@ -33,19 +36,23 @@ function App() {
 
   return (
     <ConfigProvider locale={zhCN}>
-      <BrowserRouter>
-        <div className="app">
-          <Routes>
-            <Route path="/" element={<HomePage />} />
-            <Route path="/import" element={<ImportPage />} />
-            <Route path="/manual" element={<ManualEntryPage />} />
-            <Route path="/analysis" element={<AnalysisPage />} />
-            <Route path="/categories" element={<CategoriesPage />} />
-            <Route path="/settings" element={<SettingsPage />} />
-            <Route path="/sync" element={<SyncPage />} />
-          </Routes>
-        </div>
-      </BrowserRouter>
+      <ToastProvider>
+        <BrowserRouter>
+          <div className="app">
+            <Routes>
+              <Route path="/" element={<HomePage />} />
+              <Route path="/import" element={<ImportPage />} />
+              <Route path="/manual" element={<ManualEntryPage />} />
+              <Route path="/edit/:id" element={<EditBillPage />} />
+              <Route path="/analysis" element={<AnalysisPage />} />
+              <Route path="/categories" element={<CategoriesPage />} />
+              <Route path="/settings" element={<SettingsPage />} />
+              <Route path="/sync" element={<SyncPage />} />
+              <Route path="/category-rules" element={<CategoryRulesPage />} />
+            </Routes>
+          </div>
+        </BrowserRouter>
+      </ToastProvider>
     </ConfigProvider>
   );
 }

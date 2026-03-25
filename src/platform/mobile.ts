@@ -12,7 +12,7 @@ export async function getLocalIP(): Promise<string> {
   // 在 Capacitor 环境中，通过原生接口获取 IP
   try {
     // 在 Capacitor 环境中，通过原生接口获取 IP
-    const result = await (window as any).Capacitor?.Plugins?.Network?.getIP?.();
+    const result = await (window as { Capacitor?: { Plugins?: { Network?: { getIP?: () => Promise<{ ip?: string }> } } } }).Capacitor?.Plugins?.Network?.getIP?.();
     return result?.ip || '127.0.0.1';
   } catch {
     return '127.0.0.1';
@@ -33,7 +33,7 @@ export async function startLocalServer(port: number = 3847): Promise<{
 
   try {
     // 在实际实现中，这里会调用原生插件
-    const result = await (window as any).Capacitor?.Plugins?.Server?.start?.({
+    const result = await (window as { Capacitor?: { Plugins?: { Server?: { start?: (options: { port: number }) => Promise<{ success?: boolean; ip?: string; port?: number }> } } } }).Capacitor?.Plugins?.Server?.start?.({
       port,
     });
     return {
@@ -54,7 +54,7 @@ export async function stopLocalServer(): Promise<void> {
   if (!isMobile) return;
 
   try {
-    await (window as any).Capacitor?.Plugins?.Server?.stop?.();
+    await (window as { Capacitor?: { Plugins?: { Server?: { stop?: () => Promise<void> } } } }).Capacitor?.Plugins?.Server?.stop?.();
   } catch (e) {
     console.error('Stop server error:', e);
   }
@@ -68,13 +68,13 @@ export async function getServerStatus(): Promise<{
   connections?: number;
 }> {
   if (!isMobile) {
-    return { running: false };
+    return { running: false, ip: undefined, port: undefined };
   }
 
   try {
-    const result = await (window as any).Capacitor?.Plugins?.Server?.status?.();
-    return result || { running: false };
+    const result = await (window as { Capacitor?: { Plugins?: { Server?: { status?: () => Promise<{ running?: boolean }> } } } }).Capacitor?.Plugins?.Server?.status?.();
+    return result ? { running: result.running || false, ip: undefined, port: undefined } : { running: false, ip: undefined, port: undefined };
   } catch {
-    return { running: false };
+    return { running: false, ip: undefined, port: undefined };
   }
 }

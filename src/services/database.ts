@@ -1,5 +1,5 @@
 import Dexie, { Table } from 'dexie';
-import { BillRecord, Category, SyncInfo } from '../types';
+import { BillRecord, Category, SyncInfo, CategoryRule } from '../types';
 import { createDefaultCategories } from '../utils/categories';
 
 // Web 端 IndexedDB 实现
@@ -7,6 +7,7 @@ class WebDatabase extends Dexie {
   bills!: Table<BillRecord, string>;
   categories!: Table<Category, string>;
   syncInfo!: Table<SyncInfo, string>;
+  categoryRules!: Table<CategoryRule, string>;
 
   constructor() {
     super('BillSyncDB');
@@ -14,6 +15,13 @@ class WebDatabase extends Dexie {
       bills: 'id, category, date, syncState, createdAt',
       categories: 'id, name, isDefault',
       syncInfo: 'deviceId',
+    });
+    // 升级到版本2：添加 categoryRules 表
+    this.version(2).stores({
+      bills: 'id, category, date, syncState, createdAt',
+      categories: 'id, name, isDefault, type',
+      syncInfo: 'deviceId',
+      categoryRules: 'id, categoryId, enabled',
     });
   }
 
@@ -151,5 +159,43 @@ export const syncOps = {
 
   async clear(): Promise<void> {
     await db.syncInfo.clear();
+  },
+};
+
+// 分类规则操作
+export const categoryRuleOps = {
+  async getAll(): Promise<CategoryRule[]> {
+    return db.categoryRules.toArray();
+  },
+
+  async getById(id: string): Promise<CategoryRule | undefined> {
+    return db.categoryRules.get(id);
+  },
+
+  async getEnabled(): Promise<CategoryRule[]> {
+    return db.categoryRules.filter((r) => r.enabled).toArray();
+  },
+
+  async add(rule: CategoryRule): Promise<string> {
+    return db.categoryRules.add(rule);
+  },
+
+  async update(id: string, changes: Partial<CategoryRule>): Promise<number> {
+    return db.categoryRules.update(id, { ...changes, updatedAt: new Date().toISOString() });
+  },
+
+  async delete(id: string): Promise<void> {
+    await db.categoryRules.delete(id);
+  },
+
+  async toggleEnabled(id: string): Promise<void> {
+    const rule = await db.categoryRules.get(id);
+    if (rule) {
+      await db.categoryRules.update(id, { enabled: !rule.enabled, updatedAt: new Date().toISOString() });
+    }
+  },
+
+  async bulkAdd(rules: CategoryRule[]): Promise<void> {
+    await db.categoryRules.bulkAdd(rules);
   },
 };

@@ -148,8 +148,6 @@ async function handleMessage(message: SyncMessage): Promise<void> {
 async function handleSyncData(payload: { bills?: BillRecord[]; categories?: Category[] }): Promise<void> {
   if (!payload) return;
   
-  const syncStore = useSyncStore.getState();
-  
   // 处理账单
   if (payload.bills) {
     for (const bill of payload.bills) {

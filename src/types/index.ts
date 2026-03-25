@@ -22,6 +22,7 @@ export interface Category {
   name: string;
   icon: string;
   color: string;
+  type: 'income' | 'expense';  // 收支类型
   isDefault: boolean;
   createdAt: string;
   updatedAt: string;
@@ -95,4 +96,19 @@ export interface DeviceInfo {
   id: string;
   name: string;
   type: 'mobile' | 'web';
+}
+
+// 分类规则配置
+export interface CategoryRule {
+  id: string;
+  keyword: string;           // 匹配关键词
+  matchField: 'merchant' | 'description';  // 匹配字段
+  matchType: 'contains' | 'regex';  // 匹配方式
+  categoryId: string;        // 匹配的分类ID
+  priority: number;          // 优先级（数字越大优先级越高）
+  enabled: boolean;           // 是否启用
+  createdAt: string;
+  updatedAt: string;
+  deviceId: string;
+  syncVersion: number;
 }

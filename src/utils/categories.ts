@@ -6,16 +6,20 @@ const defaultTime = now();
 
 // 默认分类列表
 export const defaultCategories: Omit<Category, 'id' | 'createdAt' | 'updatedAt' | 'deviceId' | 'syncVersion'>[] = [
-  { name: '餐饮', icon: '🍜', color: '#FF6B6B', isDefault: true },
-  { name: '购物', icon: '🛒', color: '#4ECDC4', isDefault: true },
-  { name: '交通', icon: '🚗', color: '#45B7D1', isDefault: true },
-  { name: '娱乐', icon: '🎬', color: '#96CEB4', isDefault: true },
-  { name: '医疗', icon: '💊', color: '#DDA0DD', isDefault: true },
-  { name: '通讯', icon: '📱', color: '#98D8C8', isDefault: true },
-  { name: '住房', icon: '🏠', color: '#F7DC6F', isDefault: true },
-  { name: '教育', icon: '📚', color: '#BB8FCE', isDefault: true },
-  { name: '收入', icon: '💰', color: '#58D68D', isDefault: true },
-  { name: '其他', icon: '📦', color: '#85929E', isDefault: true },
+  // 支出分类
+  { name: '餐饮', icon: '🍜', color: '#FF6B6B', type: 'expense', isDefault: true },
+  { name: '购物', icon: '🛒', color: '#4ECDC4', type: 'expense', isDefault: true },
+  { name: '交通', icon: '🚗', color: '#45B7D1', type: 'expense', isDefault: true },
+  { name: '娱乐', icon: '🎬', color: '#96CEB4', type: 'expense', isDefault: true },
+  { name: '医疗', icon: '💊', color: '#DDA0DD', type: 'expense', isDefault: true },
+  { name: '通讯', icon: '📱', color: '#98D8C8', type: 'expense', isDefault: true },
+  { name: '住房', icon: '🏠', color: '#F7DC6F', type: 'expense', isDefault: true },
+  { name: '教育', icon: '📚', color: '#BB8FCE', type: 'expense', isDefault: true },
+  // 收入分类
+  { name: '工资', icon: '💰', color: '#58D68D', type: 'income', isDefault: true },
+  { name: '奖金', icon: '🎁', color: '#F39C12', type: 'income', isDefault: true },
+  { name: '投资', icon: '📈', color: '#3498DB', type: 'income', isDefault: true },
+  { name: '其他', icon: '📦', color: '#85929E', type: 'expense', isDefault: true },
 ];
 
 // 创建完整分类对象

@@ -16,6 +16,12 @@ const settingsItems = [
     path: '/categories',
   },
   {
+    icon: '🔧',
+    title: '分类规则',
+    description: '配置自动匹配规则，支持模糊匹配商家/描述',
+    path: '/category-rules',
+  },
+  {
     icon: '💾',
     title: '备份与恢复',
     description: '导出或导入账单数据',
