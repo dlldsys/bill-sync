@@ -85,6 +85,8 @@ export interface ParsedBill {
   amount: number;
   date: string;
   description: string;
+  merchant?: string;  // 商家名称
+  category?: string;  // 识别的类目
   confidence: number;
 }
 
