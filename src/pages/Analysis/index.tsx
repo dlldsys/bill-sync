@@ -49,8 +49,52 @@ function AnalysisPage() {
 
   const [viewMode, setViewMode] = useState<ViewMode>('month');
   const [selectedDate, setSelectedDate] = useState(new Date());
+  const [selectedWeek, setSelectedWeek] = useState<number>(0); // 0表示当前周
+  const [selectedMonth, setSelectedMonth] = useState<number>(0); // 0表示当前月
   const [activeTab, setActiveTab] = useState<'expense' | 'income'>('expense');
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set());
+
+  // 计算某年某周的开始日期
+  const getWeekStartDate = (year: number, week: number): Date => {
+    const firstDayOfYear = new Date(year, 0, 1);
+    const dayOfWeek = firstDayOfYear.getDay();
+    const daysToMonday = dayOfWeek === 0 ? -6 : 1 - dayOfWeek;
+    const firstMonday = new Date(firstDayOfYear.getTime() + daysToMonday * 24 * 60 * 60 * 1000);
+    return new Date(firstMonday.getTime() + (week - 1) * 7 * 24 * 60 * 60 * 1000);
+  };
+
+  // 计算某年某周是第几周
+  const getWeekNumber = (date: Date): number => {
+    const firstDayOfYear = new Date(date.getFullYear(), 0, 1);
+    const pastDaysOfYear = (date.getTime() - firstDayOfYear.getTime()) / 86400000;
+    return Math.ceil((pastDaysOfYear + firstDayOfYear.getDay() + 1) / 7);
+  };
+
+  // 获取当前年的周数
+  const getWeeksInYear = (year: number): number => {
+    const lastDay = new Date(year, 11, 31);
+    return getWeekNumber(lastDay);
+  };
+
+  // 根据选择的周数更新日期
+  const updateDateFromWeek = (week: number) => {
+    const year = selectedDate.getFullYear();
+    if (week > 0) {
+      setSelectedDate(getWeekStartDate(year, week));
+    } else {
+      setSelectedDate(new Date());
+    }
+  };
+
+  // 根据选择的月份更新日期
+  const updateDateFromMonth = (month: number) => {
+    const year = selectedDate.getFullYear();
+    if (month > 0) {
+      setSelectedDate(new Date(year, month - 1, 1));
+    } else {
+      setSelectedDate(new Date());
+    }
+  };
 
   // 获取当前视图的时间范围标签
   const getTimeLabel = (): string => {
@@ -58,11 +102,11 @@ function AnalysisPage() {
     const month = selectedDate.getMonth() + 1;
     
     if (viewMode === 'week') {
-      const weekStart = getWeekStart(selectedDate);
-      const weekEnd = new Date(weekStart.getTime() + 6 * 24 * 60 * 60 * 1000);
-      return `${year}年${formatDateRange(weekStart, weekEnd)}`;
+      const weekNum = selectedWeek > 0 ? selectedWeek : getWeekNumber(selectedDate);
+      return `${year}年第${weekNum}周`;
     } else if (viewMode === 'month') {
-      return `${year}年${month}月`;
+      const monthNum = selectedMonth > 0 ? selectedMonth : month;
+      return `${year}年${monthNum}月`;
     } else {
       return `${year}年`;
     }
@@ -73,8 +117,10 @@ function AnalysisPage() {
     const newDate = new Date(selectedDate);
     if (viewMode === 'week') {
       newDate.setDate(newDate.getDate() - 7);
+      setSelectedWeek(getWeekNumber(newDate));
     } else if (viewMode === 'month') {
       newDate.setMonth(newDate.getMonth() - 1);
+      setSelectedMonth(newDate.getMonth() + 1);
     } else {
       newDate.setFullYear(newDate.getFullYear() - 1);
     }
@@ -87,8 +133,10 @@ function AnalysisPage() {
     const newDate = new Date(selectedDate);
     if (viewMode === 'week') {
       newDate.setDate(newDate.getDate() + 7);
+      setSelectedWeek(getWeekNumber(newDate));
     } else if (viewMode === 'month') {
       newDate.setMonth(newDate.getMonth() + 1);
+      setSelectedMonth(newDate.getMonth() + 1);
     } else {
       newDate.setFullYear(newDate.getFullYear() + 1);
     }
@@ -114,6 +162,8 @@ function AnalysisPage() {
   // 跳转到今天/当月/当年
   const goToToday = () => {
     setSelectedDate(new Date());
+    setSelectedWeek(0); // 恢复为本周
+    setSelectedMonth(0); // 恢复为本月
     setExpandedGroups(new Set());
   };
 
@@ -510,6 +560,61 @@ function AnalysisPage() {
             </button>
           </div>
 
+          {/* 周/月快速选择 */}
+          {viewMode === 'week' && (
+            <div style={{ marginBottom: '12px' }}>
+              <select
+                value={selectedWeek}
+                onChange={(e) => {
+                  const week = parseInt(e.target.value);
+                  setSelectedWeek(week);
+                  updateDateFromWeek(week);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  background: 'white',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value={0}>本周</option>
+                {Array.from({ length: getWeeksInYear(selectedDate.getFullYear()) }, (_, i) => i + 1).map(week => (
+                  <option key={week} value={week}>第{week}周</option>
+                ))}
+              </select>
+            </div>
+          )}
+
+          {viewMode === 'month' && (
+            <div style={{ marginBottom: '12px' }}>
+              <select
+                value={selectedMonth}
+                onChange={(e) => {
+                  const month = parseInt(e.target.value);
+                  setSelectedMonth(month);
+                  updateDateFromMonth(month);
+                }}
+                style={{
+                  width: '100%',
+                  padding: '8px 12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  background: 'white',
+                  cursor: 'pointer',
+                }}
+              >
+                <option value={0}>本月</option>
+                {[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12].map(month => (
+                  <option key={month} value={month}>{month}月</option>
+                ))}
+              </select>
+            </div>
+          )}
+
           {/* 视图切换 */}
           <div style={{ display: 'flex', gap: '8px' }}>
             {(['week', 'month', 'year'] as const).map((range) => (
@@ -520,6 +625,11 @@ function AnalysisPage() {
                 onClick={() => {
                   setViewMode(range);
                   setExpandedGroups(new Set());
+                  if (range === 'week') {
+                    setSelectedWeek(getWeekNumber(selectedDate));
+                  } else if (range === 'month') {
+                    setSelectedMonth(selectedDate.getMonth() + 1);
+                  }
                 }}
               >
                 {range === 'week' ? '按周' : range === 'month' ? '按月' : '按年'}

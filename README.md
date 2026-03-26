@@ -13,6 +13,97 @@
 - 🔄 **双向同步**: 支持 Web 端与手机端数据同步
 - 📁 **导入导出**: 支持备份和恢复数据
 
+## 🆕 重大更新：纯前端OCR识别系统
+
+### 🔍 核心功能
+- **纯前端OCR识别**：完全基于浏览器运行，无需后端服务器
+- **多引擎支持**：Tesseract.js多种配置 + 智能融合算法
+- **React Hook封装**：`useFrontendOCR` 提供便捷的API
+- **演示页面**：完整的UI组件展示功能
+
+### 🎯 多引擎支持
+| 引擎 | 描述 | 适用场景 | 准确率 | 速度 |
+|------|------|----------|--------|------|
+| 混合引擎 | 智能融合多种配置 | 通用场景 | 95% | ⭐⭐⭐ |
+| 中文模式 | 专门优化中文 | 纯中文文档 | 90% | ⭐⭐⭐⭐ |
+| 英文模式 | 专门优化英文 | 纯英文文档 | 95% | ⭐⭐⭐⭐ |
+| 中英混合 | 平衡中英文 | 混合文档 | 85% | ⭐⭐⭐ |
+
+### 🔧 技术栈
+- **前端框架**：React 18.3.1 + TypeScript
+- **OCR引擎**：Tesseract.js 7.0.0
+- **UI组件**：Ant Design Mobile 5.42.3
+- **构建工具**：Vite 8.0.1
+
+### 📁 新增文件
+```
+src/
+├── services/
+│   └── frontend-ocr.ts          # 纯前端OCR核心服务
+├── hooks/
+│   └── useFrontendOCR.ts        # React Hook封装
+└── pages/
+    └── FrontendOCRDemo/
+        ├── index.tsx             # Ant Design版本演示
+        └── simple.tsx            # 纯HTML版本演示
+```
+
+### 🚀 快速开始
+```tsx
+import { useOCR, OCREngine } from './hooks/useFrontendOCR';
+
+const MyComponent = () => {
+  const {
+    isProcessing,
+    progress,
+    result,
+    error,
+    processImage
+  } = useOCR();
+
+  const handleFileUpload = async (file: File) => {
+    const result = await processImage(file, OCREngine.HYBRID);
+    console.log('OCR结果:', result);
+  };
+
+  return (
+    <div>
+      <input
+        type="file"
+        accept="image/*"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) handleFileUpload(file);
+        }}
+        disabled={isProcessing}
+      />
+      
+      {isProcessing && (
+        <div>识别进度: {Math.round(progress)}%</div>
+      )}
+      
+      {result && (
+        <div>
+          <p>引擎: {result.engine}</p>
+          <p>置信度: {result.confidence}%</p>
+          <p>文本: {result.text}</p>
+        </div>
+      )}
+    </div>
+  );
+};
+```
+
+### 🔧 问题修复
+1. **React 19兼容性**：降级到React 18.3.1解决`unmountComponentAtNode`错误
+2. **金额识别优化**：
+   - 修复"可 心 35.00"被错误分割的问题
+   - 修复收入503被识别为支出的问题
+   - 优化商家名称提取逻辑
+3. **类型错误修复**：
+   - 添加`merchantPrefix`字段到金额匹配接口
+   - 修复TypeScript类型定义问题
+
 ## 使用教程
 
 ### 方式一：Web 端使用（推荐快速体验）

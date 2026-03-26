@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { QRCodeSVG } from 'qrcode.react';
 import { Toast } from 'antd-mobile';
@@ -27,6 +27,11 @@ function SyncPage() {
   const [syncMode, setSyncMode] = useState<'auto' | 'web' | 'mobile'>('auto');
   const [webServerPort] = useState('3847');
   const [localIP, setLocalIP] = useState('');
+  const [showScanner, setShowScanner] = useState(false);
+  const [scanning, setScanning] = useState(false);
+  const [manualIP, setManualIP] = useState('');
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const streamRef = useRef<MediaStream | null>(null);
 
   // 检测是否为手机端
   const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
@@ -39,6 +44,101 @@ function SyncPage() {
     };
     getIP();
   }, []);
+
+  // 启动摄像头扫描
+  const startScanner = async () => {
+    try {
+      // 检查是否支持 BarcodeDetector
+      if (!('BarcodeDetector' in window)) {
+        Toast.show('您的浏览器不支持二维码扫描，请使用手动输入');
+        return;
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({
+        video: { facingMode: 'environment' }
+      });
+      streamRef.current = stream;
+      
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        await videoRef.current.play();
+        setShowScanner(true);
+        setScanning(true);
+        
+        // 开始检测二维码
+        detectQRCode();
+      }
+    } catch (error) {
+      console.error('Camera error:', error);
+      Toast.show('无法访问摄像头，请检查权限设置');
+    }
+  };
+
+  // 停止摄像头
+  const stopScanner = () => {
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current = null;
+    }
+    setShowScanner(false);
+    setScanning(false);
+  };
+
+  // 检测二维码
+  const detectQRCode = async () => {
+    if (!scanning || !videoRef.current) return;
+
+    try {
+      // @ts-ignore - BarcodeDetector 可能不在 TypeScript 类型定义中
+      const detector = new BarcodeDetector({ formats: ['qr_code'] });
+      
+      const detect = async () => {
+        if (!scanning || !videoRef.current) return;
+        
+        try {
+          const barcodes = await detector.detect(videoRef.current);
+          if (barcodes.length > 0) {
+            const data = barcodes[0].rawValue;
+            handleQRCodeData(data);
+            return;
+          }
+        } catch (e) {
+          // 检测失败，继续尝试
+        }
+        
+        // 继续检测
+        requestAnimationFrame(detect);
+      };
+      
+      detect();
+    } catch (error) {
+      console.error('Detection error:', error);
+      Toast.show('二维码检测失败，请使用手动输入');
+      stopScanner();
+    }
+  };
+
+  // 处理二维码数据
+  const handleQRCodeData = (data: string) => {
+    stopScanner();
+    
+    try {
+      const parsed = JSON.parse(data);
+      if (parsed.type === 'bill-sync' && parsed.host && parsed.port) {
+        handleManualConnect(parsed.host, String(parsed.port));
+      } else {
+        Toast.show('无效的二维码');
+      }
+    } catch {
+      // 如果不是 JSON，尝试直接作为 IP:端口
+      const match = data.match(/(\d+\.\d+\.\d+\.\d+):(\d+)/);
+      if (match) {
+        handleManualConnect(match[1], match[2]);
+      } else {
+        Toast.show('无效的二维码格式');
+      }
+    }
+  };
 
   // 生成连接信息（供手机扫码）
   const getConnectionInfo = () => {
@@ -247,50 +347,141 @@ function SyncPage() {
         {isMobile ? (
           /* 手机端：扫码连接 Web */
           <>
-            {/* 二维码扫描区域 */}
-            <div className="card">
-              <div style={{ fontSize: '15px', fontWeight: '600', marginBottom: '16px' }}>
-                扫码连接 Web 端
-              </div>
-              <div style={{ 
-                background: '#f5f5f5', 
-                borderRadius: '12px', 
-                padding: '24px',
-                textAlign: 'center',
-                marginBottom: '16px'
-              }}>
-                <div style={{ fontSize: '48px', marginBottom: '12px' }}>📱</div>
-                <div style={{ fontSize: '14px', color: '#666' }}>
-                  在 Web 端打开「数据同步」页面<br/>
-                  扫描显示的二维码
+            {/* 扫码界面 */}
+            {showScanner ? (
+              <div className="card" style={{ marginBottom: '16px' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '12px' }}>
+                  <div style={{ fontSize: '15px', fontWeight: '600' }}>
+                    扫描二维码
+                  </div>
+                  <button
+                    className="btn btn-outline"
+                    style={{ padding: '4px 12px', fontSize: '12px' }}
+                    onClick={stopScanner}
+                  >
+                    取消
+                  </button>
+                </div>
+                <div style={{
+                  position: 'relative',
+                  width: '100%',
+                  aspectRatio: '1',
+                  background: '#000',
+                  borderRadius: '12px',
+                  overflow: 'hidden',
+                }}>
+                  <video
+                    ref={videoRef}
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      objectFit: 'cover',
+                    }}
+                    playsInline
+                    muted
+                  />
+                  {/* 扫描框 */}
+                  <div style={{
+                    position: 'absolute',
+                    top: '50%',
+                    left: '50%',
+                    transform: 'translate(-50%, -50%)',
+                    width: '200px',
+                    height: '200px',
+                    border: '2px solid #667eea',
+                    borderRadius: '12px',
+                    boxShadow: '0 0 0 9999px rgba(0,0,0,0.5)',
+                  }}>
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      left: 0,
+                      width: '20px',
+                      height: '20px',
+                      borderTop: '4px solid #667eea',
+                      borderLeft: '4px solid #667eea',
+                      borderRadius: '4px 0 0 0',
+                    }} />
+                    <div style={{
+                      position: 'absolute',
+                      top: 0,
+                      right: 0,
+                      width: '20px',
+                      height: '20px',
+                      borderTop: '4px solid #667eea',
+                      borderRight: '4px solid #667eea',
+                      borderRadius: '0 4px 0 0',
+                    }} />
+                    <div style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      left: 0,
+                      width: '20px',
+                      height: '20px',
+                      borderBottom: '4px solid #667eea',
+                      borderLeft: '4px solid #667eea',
+                      borderRadius: '0 0 0 4px',
+                    }} />
+                    <div style={{
+                      position: 'absolute',
+                      bottom: 0,
+                      right: 0,
+                      width: '20px',
+                      height: '20px',
+                      borderBottom: '4px solid #667eea',
+                      borderRight: '4px solid #667eea',
+                      borderRadius: '0 0 4px 0',
+                    }} />
+                  </div>
+                </div>
+                <div style={{ textAlign: 'center', marginTop: '12px', fontSize: '13px', color: '#666' }}>
+                  将二维码放入框内即可自动扫描
                 </div>
               </div>
-            </div>
+            ) : (
+              <>
+                {/* 扫码按钮 */}
+                <div className="card">
+                  <div style={{ fontSize: '15px', fontWeight: '600', marginBottom: '16px' }}>
+                    扫码连接 Web 端
+                  </div>
+                  <button
+                    className="btn btn-primary"
+                    style={{ width: '100%', padding: '16px', fontSize: '16px' }}
+                    onClick={startScanner}
+                  >
+                    <span style={{ marginRight: '8px' }}>📷</span>
+                    扫描二维码
+                  </button>
+                  <div style={{ fontSize: '12px', color: '#999', marginTop: '8px', textAlign: 'center' }}>
+                    在 Web 端「数据同步」页面显示二维码
+                  </div>
+                </div>
 
-            {/* 手动输入 */}
-            <div className="card">
-              <div style={{ fontSize: '15px', fontWeight: '600', marginBottom: '16px' }}>
-                或手动输入 Web 地址
-              </div>
-              <div className="form-group">
-                <label className="form-label">Web 端 IP</label>
-                <input
-                  type="text"
-                  className="form-input"
-                  placeholder="例如: 192.168.1.100"
-                  id="web-ip"
-                />
-              </div>
-              <button
-                className="btn btn-primary btn-block"
-                onClick={() => {
-                  const ipInput = document.getElementById('web-ip') as HTMLInputElement;
-                  handleManualConnect(ipInput.value, webServerPort);
-                }}
-              >
-                连接
-              </button>
-            </div>
+                {/* 手动输入 */}
+                <div className="card" style={{ marginTop: '16px' }}>
+                  <div style={{ fontSize: '15px', fontWeight: '600', marginBottom: '16px' }}>
+                    或手动输入 Web 地址
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Web 端 IP</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      placeholder="例如: 192.168.1.100"
+                      value={manualIP}
+                      onChange={(e) => setManualIP(e.target.value)}
+                    />
+                  </div>
+                  <button
+                    className="btn btn-primary btn-block"
+                    onClick={() => handleManualConnect(manualIP, webServerPort)}
+                  >
+                    连接
+                  </button>
+                </div>
+              </>
+            )}
           </>
         ) : (
           /* Web 端：启动服务，显示二维码 */

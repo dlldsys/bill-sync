@@ -1,0 +1,82 @@
+[
+  {
+    "merchant": "凯德集团",
+    "amount": 20,
+    "type": "expense",
+    "category": "购物/商场消费",
+    "categoryId": "shopping",
+    "date": "2026-03-01",
+    "confidence": 85,
+    "original": "-20.00"
+  },
+  {
+    "merchant": "给宁静的深海",
+    "amount": 18,
+    "type": "expense",
+    "category": "其他",
+    "categoryId": "other",
+    "date": "2026-03-01",
+    "confidence": 85,
+    "original": "-18.00"
+  },
+  {
+    "merchant": "凯德集团",
+    "amount": 20,
+    "type": "expense",
+    "category": "购物/商场消费",
+    "categoryId": "shopping",
+    "date": "2026-03-01",
+    "confidence": 85,
+    "original": "-20.00"
+  },
+  {
+    "merchant": "给可心",
+    "amount": 35,
+    "type": "expense",
+    "category": "其他",
+    "categoryId": "other",
+    "date": "2026-03-01",
+    "confidence": 85,
+    "original": "-35.00"
+  },
+  {
+    "merchant": "刁*",
+    "amount": 3,
+    "type": "income",
+    "category": "个人转账收入",
+    "categoryId": "transfer_in",
+    "date": "2026-03-01",
+    "confidence": 85,
+    "original": "+3.00"
+  },
+  {
+    "merchant": "刁*",
+    "amount": 20,
+    "type": "expense",
+    "category": "其他",
+    "categoryId": "other",
+    "date": "2026-03-01",
+    "confidence": 85,
+    "original": "-20.00"
+  },
+  {
+    "merchant": "刁*",
+    "amount": 18,
+    "type": "expense",
+    "category": "其他",
+    "categoryId": "other",
+    "date": "2026-03-01",
+    "confidence": 85,
+    "original": "-18.00"
+  },
+  {
+    "merchant": "刁*",
+    "amount": 260,
+    "type": "expense",
+    "category": "其他",
+    "categoryId": "other",
+    "date": "2026-03-01",
+    "confidence": 85,
+    "original": "-260.00"
+  }
+]

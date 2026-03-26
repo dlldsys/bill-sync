@@ -1,0 +1,90 @@
+[
+  {
+    "filename": "c80139af474819cefc8020b0b01d917d.jpg",
+    "size": [
+      1280,
+      2275
+    ],
+    "mode": "RGB",
+    "format": "JPEG",
+    "aspect_ratio": 0.5626373626373626,
+    "average_color": [
+      53,
+      59,
+      70
+    ],
+    "dominant_color": [
+      20,
+      22,
+      34
+    ],
+    "orientation": "portrait",
+    "brightness": "dark"
+  },
+  {
+    "filename": "d7755173a263a3a5f22c259a12f97b93.jpg",
+    "size": [
+      1280,
+      2275
+    ],
+    "mode": "RGB",
+    "format": "JPEG",
+    "aspect_ratio": 0.5626373626373626,
+    "average_color": [
+      240,
+      246,
+      247
+    ],
+    "dominant_color": [
+      255,
+      255,
+      255
+    ],
+    "orientation": "portrait",
+    "brightness": "bright"
+  },
+  {
+    "filename": "f6c0c3bf9f0bbadd7495a2e86dbcd720.jpg",
+    "size": [
+      1280,
+      2275
+    ],
+    "mode": "RGB",
+    "format": "JPEG",
+    "aspect_ratio": 0.5626373626373626,
+    "average_color": [
+      227,
+      242,
+      244
+    ],
+    "dominant_color": [
+      255,
+      255,
+      255
+    ],
+    "orientation": "portrait",
+    "brightness": "bright"
+  },
+  {
+    "filename": "f761f9fa966325c83e87346a1bffe9ea.jpg",
+    "size": [
+      1280,
+      2275
+    ],
+    "mode": "RGB",
+    "format": "JPEG",
+    "aspect_ratio": 0.5626373626373626,
+    "average_color": [
+      226,
+      239,
+      241
+    ],
+    "dominant_color": [
+      255,
+      255,
+      255
+    ],
+    "orientation": "portrait",
+    "brightness": "bright"
+  }
+]

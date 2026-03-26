@@ -54,14 +54,14 @@ function SettingsPage() {
           >
             <div
               style={{
-                width: '44px',
-                height: '44px',
-                borderRadius: '12px',
-                background: 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
+                width: '48px',
+                height: '48px',
+                borderRadius: '10px',
+                background: 'rgba(10, 191, 202, 0.15)',
                 display: 'flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                fontSize: '22px',
+                fontSize: '24px',
                 marginRight: '14px',
               }}
             >

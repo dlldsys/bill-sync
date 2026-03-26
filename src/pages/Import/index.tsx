@@ -1,11 +1,18 @@
-import { useState, useRef } from 'react';
+import { useState, useRef, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { Button, Toast } from 'antd-mobile';
 import BottomNav from '../../components/BottomNav';
 import { useBillStore, useCategoryStore } from '../../stores';
 import { recognizeText, parseBillTextWithAutoMatch, parseBillText, type ParseBillResult } from '../../services/ocr';
-import { generateId, now, getDeviceId } from '../../utils';
+import { generateId, now, getDeviceId, formatDate } from '../../utils';
 import type { BillRecord, OCRResult } from '../../types';
+
+// 每张图片的识别结果
+interface ImageParseResult {
+  imageIndex: number;
+  ocrResult: OCRResult;
+  parsedBills: ParseBillResult[];
+}
 
 function ImportPage() {
   const navigate = useNavigate();
@@ -15,12 +22,21 @@ function ImportPage() {
 
   const [files, setFiles] = useState<File[]>([]);
   const [previewUrls, setPreviewUrls] = useState<string[]>([]);
-  const [ocrResults, setOcrResults] = useState<OCRResult[]>([]);
-  const [parsedBills, setParsedBills] = useState<ParseBillResult[]>([]);
+  const [imageResults, setImageResults] = useState<ImageParseResult[]>([]);
   const [progress, setProgress] = useState(0);
   const [isProcessing, setIsProcessing] = useState(false);
   const [isSaving, setIsSaving] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
+  const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+
+  // 分离支出和收入分类
+  const expenseCategories = categories.filter(c => !c.type || c.type === 'expense');
+  const incomeCategories = categories.filter(c => c.type === 'income');
+
+  // 计算所有识别结果
+  const allParsedBills = useMemo(() => {
+    return imageResults.flatMap(r => r.parsedBills);
+  }, [imageResults]);
 
   // 处理文件选择
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -29,8 +45,7 @@ function ImportPage() {
 
     setFiles(selectedFiles);
     setPreviewUrls(selectedFiles.map((f) => URL.createObjectURL(f)));
-    setOcrResults([]);
-    setParsedBills([]);
+    setImageResults([]);
     setCurrentImageIndex(0);
   };
 
@@ -44,12 +59,11 @@ function ImportPage() {
 
     setFiles(droppedFiles);
     setPreviewUrls(droppedFiles.map((f) => URL.createObjectURL(f)));
-    setOcrResults([]);
-    setParsedBills([]);
+    setImageResults([]);
     setCurrentImageIndex(0);
   };
 
-  // OCR 识别
+  // OCR 识别 - 修复版本
   const handleOCR = async () => {
     if (files.length === 0) {
       Toast.show('请先选择图片');
@@ -58,29 +72,38 @@ function ImportPage() {
 
     setIsProcessing(true);
     setProgress(0);
+    setImageResults([]);
 
     try {
-      const results: OCRResult[] = [];
-      const allParsed: ParseBillResult[] = [];
+      const results: ImageParseResult[] = [];
 
-      for (const file of files) {
-        const result = await recognizeText(file);
-        results.push(result);
-        // 使用新的自动匹配分类函数
-        const parsed = await parseBillTextWithAutoMatch(result.text);
-        allParsed.push(...parsed);
-        setProgress(Math.round(((results.length) / files.length) * 100));
+      for (let i = 0; i < files.length; i++) {
+        const file = files[i];
+        const ocrResult = await recognizeText(file);
+
+        // 解析当前图片的账单
+        const parsedBills = await parseBillTextWithAutoMatch(ocrResult.text);
+
+        results.push({
+          imageIndex: i,
+          ocrResult,
+          parsedBills,
+        });
+
+        setProgress(Math.round(((i + 1) / files.length) * 100));
       }
 
-      setOcrResults(results);
-      setParsedBills(allParsed);
-      
-      // 统计自动匹配成功的数量
-      const matchedCount = allParsed.filter(p => p.matchedCategoryId).length;
-      if (matchedCount > 0) {
-        Toast.show(`识别完成，共 ${allParsed.length} 条记录（自动匹配 ${matchedCount} 条）`);
+      setImageResults(results);
+
+      // 统计信息
+      const totalBills = results.reduce((sum, r) => sum + r.parsedBills.length, 0);
+      const matchedCount = results.reduce((sum, r) =>
+        sum + r.parsedBills.filter(b => b.matchedCategoryId).length, 0);
+
+      if (totalBills > 0) {
+        Toast.show(`识别完成，共 ${totalBills} 条记录（${matchedCount} 条已匹配分类）`);
       } else {
-        Toast.show(`识别完成，共 ${allParsed.length} 条记录`);
+        Toast.show('未识别到有效记录');
       }
     } catch (error) {
       console.error('OCR error:', error);
@@ -90,75 +113,104 @@ function ImportPage() {
     }
   };
 
-  // 修改解析结果
-  const updateParsedBill = (index: number, field: string, value: string | number) => {
-    const updated = [...parsedBills];
-    (updated[index] as any)[field] = value;
-    setParsedBills(updated);
+  // 修改解析结果 - 修复版本
+  const updateParsedBill = (imageIndex: number, billIndex: number, field: string, value: string | number) => {
+    setImageResults(prev => {
+      const updated = [...prev];
+      const imageResult = updated.find(r => r.imageIndex === imageIndex);
+      if (imageResult && imageResult.parsedBills[billIndex]) {
+        (imageResult.parsedBills[billIndex] as any)[field] = value;
+      }
+      return updated;
+    });
+  };
+
+  // 批量设置分类
+  const batchSetCategory = (categoryId: string) => {
+    if (!categoryId) {
+      Toast.show('请先选择分类');
+      return;
+    }
+
+    const category = categories.find(c => c.id === categoryId);
+    if (!category) return;
+
+    setImageResults(prev => {
+      const updated = prev.map(imageResult => ({
+        ...imageResult,
+        parsedBills: imageResult.parsedBills.map(bill => ({
+          ...bill,
+          matchedCategoryId: categoryId,
+          matchedCategoryName: category.name,
+          category: category.name,
+          billType: category.type || 'expense',
+        })),
+      }));
+      return updated;
+    });
+
+    Toast.show(`已为所有记录设置为「${category.name}」`);
   };
 
   // 删除单条记录
-  const deleteParsedBill = (index: number) => {
-    const updated = [...parsedBills];
-    updated.splice(index, 1);
-    setParsedBills(updated);
+  const deleteParsedBill = (imageIndex: number, billIndex: number) => {
+    setImageResults(prev => {
+      const updated = [...prev];
+      const imageResult = updated.find(r => r.imageIndex === imageIndex);
+      if (imageResult) {
+        imageResult.parsedBills = imageResult.parsedBills.filter((_, idx) => idx !== billIndex);
+      }
+      return updated;
+    });
+  };
+
+  // 检查有多少记录还未选择分类
+  const getUnmatchedCount = () => {
+    return allParsedBills.filter(p => !p.matchedCategoryId).length;
   };
 
   // 保存账单
   const handleSave = async () => {
-    if (parsedBills.length === 0) {
+    if (allParsedBills.length === 0) {
       Toast.show('没有可保存的账单');
       return;
+    }
+
+    // 检查未设置分类的记录
+    const unmatchedCount = getUnmatchedCount();
+    if (unmatchedCount > 0) {
+      const confirm = window.confirm(`还有 ${unmatchedCount} 条记录未选择分类，确定要保存吗？未选择分类的记录将使用默认分类。`);
+      if (!confirm) return;
     }
 
     setIsSaving(true);
     try {
       const deviceId = getDeviceId();
-      
-      // 分离支出和收入分类
-      const expenseCategories = categories.filter(c => !c.type || c.type === 'expense');
-      const incomeCategories = categories.filter(c => c.type === 'income');
-      
-      // 直接使用parsedBills中的数据，保留自动匹配的分类信息
-      const bills: BillRecord[] = parsedBills.map((parsed, index) => {
-        // 根据billType选择对应类型的分类
-        const targetCategories = !parsed.billType || parsed.billType === 'expense' 
-          ? expenseCategories 
-          : incomeCategories;
-        
-        // 如果有自动匹配的分类ID，检查是否匹配类型
+      let billIndex = 0;
+
+      const bills: BillRecord[] = allParsedBills.map((parsed) => {
         let matchedCategory = '';
+
+        // 如果有自动匹配的分类ID，直接使用
         if (parsed.matchedCategoryId) {
-          const matchedCat = categories.find(c => c.id === parsed.matchedCategoryId);
-          if (matchedCat) {
-            // 如果分类类型匹配，使用该分类
-            if (!matchedCat.type || matchedCat.type === parsed.billType || !parsed.billType) {
-              matchedCategory = matchedCat.id;
-            }
+          matchedCategory = parsed.matchedCategoryId;
+        } else {
+          // 使用对应类型的第一个分类作为默认
+          const targetCategories = !parsed.billType || parsed.billType === 'expense'
+            ? expenseCategories
+            : incomeCategories;
+          if (targetCategories.length > 0) {
+            matchedCategory = targetCategories[0].id;
           }
         }
-        
-        // 如果没有匹配到分类，尝试通过名称匹配
-        if (!matchedCategory && parsed.category) {
-          const matched = targetCategories.find(c => 
-            c.name.includes(parsed.category!) ||
-            parsed.category!.includes(c.name)
-          );
-          if (matched) {
-            matchedCategory = matched.id;
-          }
-        }
-        
-        // 如果还是没有匹配，使用对应类型的第一个分类
-        if (!matchedCategory && targetCategories.length > 0) {
-          matchedCategory = targetCategories[0].id;
-        }
+
+        billIndex++;
 
         return {
           id: generateId(),
           amount: parsed.amount || 0,
           category: matchedCategory,
-          description: parsed.description || `记录${index + 1}`,
+          description: parsed.description || `记录${billIndex}`,
           date: parsed.date || now(),
           source: 'ocr' as const,
           rawText: parsed.merchant ? `商家：${parsed.merchant}\n${parsed.description}` : parsed.description,
@@ -182,13 +234,14 @@ function ImportPage() {
   };
 
   // 获取类目颜色
-  const getCategoryColor = (categoryName?: string) => {
-    if (!categoryName) return '#999';
-    const matched = categories.find(c => 
-      c.name.includes(categoryName) || categoryName.includes(c.name)
-    );
+  const getCategoryColor = (categoryId?: string) => {
+    if (!categoryId) return '#999';
+    const matched = categories.find(c => c.id === categoryId);
     return matched?.color || '#999';
   };
+
+  // 获取当前图片的识别结果
+  const currentImageResult = imageResults.find(r => r.imageIndex === currentImageIndex);
 
   return (
     <div className="page">
@@ -200,7 +253,7 @@ function ImportPage() {
             style={{
               background: 'none',
               border: 'none',
-              color: 'white',
+              color: 'var(--text-primary)',
               fontSize: '20px',
               cursor: 'pointer',
             }}
@@ -218,8 +271,8 @@ function ImportPage() {
           <div
             className="card"
             style={{
-              border: '2px dashed #ddd',
-              background: '#fafafa',
+              border: '2px dashed var(--border-color)',
+              background: 'var(--bg-primary)',
               textAlign: 'center',
               padding: '60px 20px',
               cursor: 'pointer',
@@ -229,13 +282,13 @@ function ImportPage() {
             onDrop={handleDrop}
           >
             <div style={{ fontSize: '48px', marginBottom: '12px' }}>📷</div>
-            <div style={{ color: '#666', marginBottom: '8px' }}>
+            <div style={{ color: 'var(--text-secondary)', marginBottom: '8px' }}>
               点击或拖拽上传账单截图
             </div>
-            <div style={{ fontSize: '12px', color: '#999' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-muted)' }}>
               支持 JPG、PNG 格式，可批量上传
             </div>
-            <div style={{ fontSize: '12px', color: '#666', marginTop: '8px' }}>
+            <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginTop: '8px' }}>
               支持微信/支付宝/银行账单截图
             </div>
             <input
@@ -252,87 +305,87 @@ function ImportPage() {
             {/* 图片预览 */}
             <div className="card" style={{ marginBottom: '16px' }}>
               <div style={{ display: 'flex', gap: '8px', flexWrap: 'wrap', marginBottom: '12px' }}>
-                {previewUrls.map((url, index) => (
-                  <div
-                    key={index}
-                    onClick={() => setCurrentImageIndex(index)}
-                    style={{
-                      width: '60px',
-                      height: '60px',
-                      borderRadius: '8px',
-                      overflow: 'hidden',
-                      position: 'relative',
-                      border: currentImageIndex === index ? '2px solid #667eea' : '2px solid transparent',
-                      cursor: 'pointer',
-                    }}
-                  >
-                    <img
-                      src={url}
-                      alt={`Preview ${index + 1}`}
-                      style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-                    />
-                    {parsedBills.filter((_, i) => i >= getStartIndex(index) && i < getStartIndex(index + 1)).length > 0 && (
-                      <div style={{
-                        position: 'absolute',
-                        bottom: '2px',
-                        right: '2px',
-                        background: '#667eea',
-                        color: 'white',
-                        fontSize: '10px',
-                        borderRadius: '4px',
-                        padding: '0 4px',
-                      }}>
-                        {(() => {
-                      const currentOCR = ocrResults[index];
-                      if (!currentOCR) return 0;
-                      return parseBillText(currentOCR.text).length;
-                    })()}
-                      </div>
-                    )}
-                    <button
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        const newFiles = [...files];
-                        const newPreviews = [...previewUrls];
-                        newFiles.splice(index, 1);
-                        newPreviews.splice(index, 1);
-                        setFiles(newFiles);
-                        setPreviewUrls(newPreviews);
-                        setParsedBills([]);
-                        setOcrResults([]);
-                      }}
+                {previewUrls.map((url, index) => {
+                  const result = imageResults.find(r => r.imageIndex === index);
+                  const billCount = result ? result.parsedBills.length : 0;
+
+                  return (
+                    <div
+                      key={index}
+                      onClick={() => setCurrentImageIndex(index)}
                       style={{
-                        position: 'absolute',
-                        top: '2px',
-                        right: '2px',
-                        width: '18px',
-                        height: '18px',
-                        borderRadius: '50%',
-                        background: 'rgba(0,0,0,0.5)',
-                        color: 'white',
-                        border: 'none',
+                        width: '60px',
+                        height: '60px',
+                        borderRadius: '8px',
+                        overflow: 'hidden',
+                        position: 'relative',
+                        border: currentImageIndex === index ? '2px solid var(--primary-color)' : '2px solid var(--border-light)',
                         cursor: 'pointer',
-                        fontSize: '10px',
-                        display: 'flex',
-                        alignItems: 'center',
-                        justifyContent: 'center',
                       }}
                     >
-                      ×
-                    </button>
-                  </div>
-                ))}
+                      <img
+                        src={url}
+                        alt={`Preview ${index + 1}`}
+                        style={{ width: '100%', height: '100%', objectFit: 'cover' }}
+                      />
+                      {billCount > 0 && (
+                        <div style={{
+                          position: 'absolute',
+                          bottom: '2px',
+                          right: '2px',
+                          background: 'var(--primary-color)',
+                          color: 'white',
+                          fontSize: '10px',
+                          borderRadius: '4px',
+                          padding: '0 4px',
+                        }}>
+                          {billCount}
+                        </div>
+                      )}
+                      <button
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          const newFiles = [...files];
+                          const newPreviews = [...previewUrls];
+                          newFiles.splice(index, 1);
+                          newPreviews.splice(index, 1);
+                          setFiles(newFiles);
+                          setPreviewUrls(newPreviews);
+                          setImageResults([]);
+                        }}
+                        style={{
+                          position: 'absolute',
+                          top: '2px',
+                          right: '2px',
+                          width: '18px',
+                          height: '18px',
+                          borderRadius: '50%',
+                          background: 'rgba(0,0,0,0.5)',
+                          color: 'white',
+                          border: 'none',
+                          cursor: 'pointer',
+                          fontSize: '10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                        }}
+                      >
+                        ×
+                      </button>
+                    </div>
+                  );
+                })}
                 <div
                   style={{
                     width: '60px',
                     height: '60px',
                     borderRadius: '8px',
-                    border: '2px dashed #ddd',
+                    border: '2px dashed var(--border-color)',
                     display: 'flex',
                     alignItems: 'center',
                     justifyContent: 'center',
                     cursor: 'pointer',
-                    color: '#999',
+                    color: 'var(--text-muted)',
                     fontSize: '20px',
                   }}
                   onClick={() => fileInputRef.current?.click()}
@@ -348,37 +401,30 @@ function ImportPage() {
                   onChange={handleFileSelect}
                 />
               </div>
-              <div style={{ fontSize: '13px', color: '#999' }}>
-                已选择 {files.length} 张图片 · {parsedBills.length} 条记录待确认
+              <div style={{ fontSize: '13px', color: 'var(--text-muted)' }}>
+                已选择 {files.length} 张图片 · {allParsedBills.length} 条记录待确认
               </div>
             </div>
 
             {/* OCR 进度 */}
             {isProcessing && (
               <div className="card" style={{ marginBottom: '16px' }}>
-                <div style={{ marginBottom: '8px' }}>
+                <div style={{ marginBottom: '8px', color: 'var(--text-secondary)' }}>
                   识别中... {progress}%
-                  {progress < 100 && ' (请耐心等待)'}
                 </div>
-                <div style={{
-                  height: '8px',
-                  background: '#f0f0f0',
-                  borderRadius: '4px',
-                  overflow: 'hidden'
-                }}>
-                  <div style={{
-                    width: `${progress}%`,
-                    height: '100%',
-                    background: 'linear-gradient(90deg, #667eea 0%, #764ba2 100%)',
-                    transition: 'width 0.3s'
-                  }} />
+                <div className="progress-bar">
+                  <div
+                    className="progress-bar-fill"
+                    style={{ width: `${progress}%` }}
+                  />
                 </div>
               </div>
             )}
 
             {/* OCR 结果 */}
-            {parsedBills.length > 0 && (
+            {imageResults.length > 0 && currentImageResult && (
               <div className="card" style={{ marginBottom: '16px' }}>
+                {/* 标题栏 */}
                 <div style={{
                   fontSize: '15px',
                   fontWeight: '600',
@@ -386,212 +432,328 @@ function ImportPage() {
                   display: 'flex',
                   justifyContent: 'space-between',
                   alignItems: 'center',
+                  color: 'var(--text-primary)',
                 }}>
-                  <span>识别结果 ({parsedBills.length} 条)</span>
-                  <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                    {/* 批量修改收支类型 */}
-                    <div style={{ display: 'flex', gap: '4px' }}>
-                      <button
-                        className="btn btn-outline"
-                        style={{ fontSize: '11px', padding: '4px 8px' }}
-                        onClick={() => {
-                          const updated = parsedBills.map(b => ({ ...b, billType: 'expense' as const }));
-                          setParsedBills(updated);
-                          Toast.show('已批量设为支出');
-                        }}
-                      >
-                        全部支出
-                      </button>
-                      <button
-                        className="btn btn-outline"
-                        style={{ fontSize: '11px', padding: '4px 8px' }}
-                        onClick={() => {
-                          const updated = parsedBills.map(b => ({ ...b, billType: 'income' as const }));
-                          setParsedBills(updated);
-                          Toast.show('已批量设为收入');
-                        }}
-                      >
-                        全部收入
-                      </button>
-                    </div>
+                  <span>
+                    图片 {currentImageIndex + 1}/{files.length} 识别结果
+                    <span style={{ color: 'var(--text-muted)', fontSize: '13px', fontWeight: 'normal', marginLeft: '8px' }}>
+                      ({currentImageResult.parsedBills.length} 条)
+                    </span>
+                  </span>
+                  {getUnmatchedCount() > 0 && (
+                    <span style={{
+                      color: 'var(--accent-warning)',
+                      fontSize: '12px',
+                      fontWeight: 'normal',
+                      background: 'rgba(250, 173, 20, 0.1)',
+                      padding: '2px 8px',
+                      borderRadius: '10px',
+                    }}>
+                      {getUnmatchedCount()} 条未分类
+                    </span>
+                  )}
+                </div>
+
+                {/* 批量选择分类 */}
+                <div style={{
+                  marginBottom: '16px',
+                  padding: '12px',
+                  background: 'var(--bg-primary)',
+                  borderRadius: '8px',
+                }}>
+                  <div style={{ fontSize: '12px', color: 'var(--text-secondary)', marginBottom: '8px' }}>
+                    批量设置分类：
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <select
+                      value={selectedCategoryId}
+                      onChange={(e) => {
+                        const catId = e.target.value;
+                        setSelectedCategoryId(catId);
+                        if (catId) {
+                          batchSetCategory(catId);
+                        }
+                      }}
+                      style={{
+                        flex: 1,
+                        padding: '8px 12px',
+                        border: '1px solid var(--border-color)',
+                        borderRadius: '8px',
+                        fontSize: '13px',
+                        background: 'white',
+                        cursor: 'pointer',
+                        color: 'var(--text-primary)',
+                      }}
+                    >
+                      <option value="">选择分类...</option>
+                      <optgroup label="支出分类">
+                        {expenseCategories.map(cat => (
+                          <option key={cat.id} value={cat.id}>
+                            {cat.icon} {cat.name}
+                          </option>
+                        ))}
+                      </optgroup>
+                      {incomeCategories.length > 0 && (
+                        <optgroup label="收入分类">
+                          {incomeCategories.map(cat => (
+                            <option key={cat.id} value={cat.id}>
+                              {cat.icon} {cat.name}
+                            </option>
+                          ))}
+                        </optgroup>
+                      )}
+                    </select>
                   </div>
                 </div>
-                
-                {/* 显示当前图片的识别结果 */}
-                {(() => {
-                  const currentOCR = ocrResults[currentImageIndex];
-                  if (!currentOCR) return null;
-                  
-                  // 计算当前图片的记录在全局数组中的起始和结束索引
-                  const startIdx = getStartIndex(currentImageIndex);
-                  const endIdx = currentImageIndex < ocrResults.length - 1 
-                    ? getStartIndex(currentImageIndex + 1)
-                    : parsedBills.length;
-                  
-                  const currentResults = parsedBills.slice(startIdx, endIdx);
-                  
-                  return currentResults.map((parsed, localIdx) => {
-                    const globalIdx = startIdx + localIdx;
-                    return (
-                      <div
-                        key={globalIdx}
-                        style={{
-                          padding: '12px',
-                          background: '#f9f9f9',
-                          borderRadius: '8px',
-                          marginBottom: '8px',
-                          borderLeft: `3px solid ${getCategoryColor(parsed.category)}`,
-                        }}
-                      >
-                        <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: '8px' }}>
-                          <span style={{ fontSize: '12px', color: '#666' }}>
-                            #{globalIdx + 1}
-                          </span>
-                          <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
-                            {parsed.category && (
-                              <span style={{
-                                fontSize: '10px',
-                                padding: '2px 6px',
-                                background: getCategoryColor(parsed.category),
-                                color: 'white',
-                                borderRadius: '4px',
-                              }}>
-                                {parsed.category}
-                              </span>
-                            )}
-                            <span style={{
-                              fontSize: '10px',
-                              color: parsed.confidence >= 60 ? '#52c41a' : parsed.confidence >= 40 ? '#faad14' : '#f5222d'
-                            }}>
-                              {parsed.confidence >= 60 ? '✓ 高' : parsed.confidence >= 40 ? '中' : '低'}
+
+                {/* 当前图片的识别结果列表 */}
+                <div style={{ display: 'flex', flexDirection: 'column', gap: '12px' }}>
+                  {currentImageResult.parsedBills.map((parsed, billIndex) => (
+                    <div
+                      key={billIndex}
+                      style={{
+                        padding: '16px',
+                        background: 'var(--bg-primary)',
+                        borderRadius: '12px',
+                        borderLeft: `3px solid ${getCategoryColor(parsed.matchedCategoryId)}`,
+                      }}
+                    >
+                      {/* 头部：序号和删除按钮 */}
+                      <div style={{
+                        display: 'flex',
+                        justifyContent: 'space-between',
+                        alignItems: 'center',
+                        marginBottom: '12px',
+                      }}>
+                        <span style={{
+                          fontSize: '12px',
+                          color: 'var(--text-muted)',
+                          fontWeight: '500',
+                        }}>
+                          记录 #{billIndex + 1}
+                          {parsed.rawDate && (
+                            <span style={{ marginLeft: '8px', color: 'var(--primary-color)' }}>
+                              (识别到日期)
                             </span>
-                            <button
-                              onClick={() => deleteParsedBill(globalIdx)}
-                              style={{
-                                background: 'none',
-                                border: 'none',
-                                color: '#f5222d',
-                                cursor: 'pointer',
-                                fontSize: '16px',
-                              }}
-                            >
-                              ×
-                            </button>
-                          </div>
+                          )}
+                        </span>
+                        <div style={{ display: 'flex', gap: '8px', alignItems: 'center' }}>
+                          {parsed.matchedCategoryId && (
+                            <span style={{
+                              fontSize: '11px',
+                              padding: '2px 8px',
+                              background: getCategoryColor(parsed.matchedCategoryId),
+                              color: 'white',
+                              borderRadius: '10px',
+                            }}>
+                              {parsed.category}
+                            </span>
+                          )}
+                          <button
+                            onClick={() => deleteParsedBill(currentImageIndex, billIndex)}
+                            style={{
+                              background: 'none',
+                              border: 'none',
+                              color: 'var(--accent-danger)',
+                              cursor: 'pointer',
+                              fontSize: '18px',
+                              padding: '0 4px',
+                            }}
+                          >
+                            ×
+                          </button>
                         </div>
-                        
-                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px', marginBottom: '8px' }}>
-                          <div>
-                            <div style={{ fontSize: '12px', color: '#999' }}>金额 (元)</div>
-                            <input
-                              type="number"
-                              step="0.01"
-                              value={parsed.amount || ''}
-                              onChange={(e) =>
-                                updateParsedBill(globalIdx, 'amount', parseFloat(e.target.value) || 0)
-                              }
-                              style={{
-                                width: '100%',
-                                padding: '6px 8px',
-                                border: '1px solid #ddd',
-                                borderRadius: '4px',
-                                fontSize: '14px',
-                              }}
-                            />
+                      </div>
+
+                      {/* 金额和日期 */}
+                      <div style={{
+                        display: 'grid',
+                        gridTemplateColumns: '1fr 1fr',
+                        gap: '12px',
+                        marginBottom: '12px',
+                      }}>
+                        <div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                            金额 (元)
                           </div>
-                          <div>
-                            <div style={{ fontSize: '12px', color: '#999' }}>日期</div>
-                            <input
-                              type="date"
-                              value={parsed.date?.split('T')[0] || ''}
-                              onChange={(e) =>
-                                updateParsedBill(globalIdx, 'date', new Date(e.target.value).toISOString())
-                              }
-                              style={{
-                                width: '100%',
-                                padding: '6px 8px',
-                                border: '1px solid #ddd',
-                                borderRadius: '4px',
-                                fontSize: '14px',
-                              }}
-                            />
-                          </div>
-                        </div>
-                        
-                        <div style={{ marginBottom: '8px' }}>
-                          <div style={{ fontSize: '12px', color: '#999' }}>商家</div>
                           <input
-                            type="text"
-                            value={parsed.merchant || ''}
+                            type="number"
+                            step="0.01"
+                            value={parsed.amount || ''}
                             onChange={(e) =>
-                              updateParsedBill(globalIdx, 'merchant', e.target.value)
+                              updateParsedBill(currentImageIndex, billIndex, 'amount', parseFloat(e.target.value) || 0)
                             }
-                            placeholder="自动识别，可手动修改"
                             style={{
                               width: '100%',
-                              padding: '6px 8px',
-                              border: '1px solid #ddd',
-                              borderRadius: '4px',
+                              padding: '8px 12px',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '8px',
                               fontSize: '14px',
+                              background: 'white',
                             }}
                           />
                         </div>
-
-                        {/* 收支类型选择 */}
-                        <div style={{ marginBottom: '8px' }}>
-                          <div style={{ fontSize: '12px', color: '#999', marginBottom: '4px' }}>类型</div>
-                          <div style={{ display: 'flex', gap: '8px' }}>
-                            <button
-                              className={`btn ${!parsed.billType || parsed.billType === 'expense' ? 'btn-primary' : 'btn-outline'}`}
-                              style={{ flex: 1, fontSize: '12px', padding: '6px' }}
-                              onClick={() => updateParsedBill(globalIdx, 'billType', 'expense')}
-                            >
-                              支出
-                            </button>
-                            <button
-                              className={`btn ${parsed.billType === 'income' ? 'btn-primary' : 'btn-outline'}`}
-                              style={{ flex: 1, fontSize: '12px', padding: '6px' }}
-                              onClick={() => updateParsedBill(globalIdx, 'billType', 'income')}
-                            >
-                              收入
-                            </button>
-                          </div>
-                        </div>
-                        
                         <div>
-                          <div style={{ fontSize: '12px', color: '#999' }}>描述</div>
+                          <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                            日期 {parsed.rawDate && '✓'}
+                          </div>
                           <input
-                            type="text"
-                            value={parsed.description || ''}
+                            type="date"
+                            value={parsed.date ? parsed.date.split('T')[0] : ''}
                             onChange={(e) =>
-                              updateParsedBill(globalIdx, 'description', e.target.value)
+                              updateParsedBill(currentImageIndex, billIndex, 'date', new Date(e.target.value).toISOString())
                             }
                             style={{
                               width: '100%',
-                              padding: '6px 8px',
-                              border: '1px solid #ddd',
-                              borderRadius: '4px',
+                              padding: '8px 12px',
+                              border: '1px solid var(--border-color)',
+                              borderRadius: '8px',
                               fontSize: '14px',
+                              background: 'white',
                             }}
                           />
                         </div>
                       </div>
-                    );
-                  });
-                })()}
-                
-                {/* 其他图片的记录数提示 */}
+
+                      {/* 商家 */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          商家
+                        </div>
+                        <input
+                          type="text"
+                          value={parsed.merchant || ''}
+                          onChange={(e) =>
+                            updateParsedBill(currentImageIndex, billIndex, 'merchant', e.target.value)
+                          }
+                          placeholder="自动识别，可手动修改"
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            background: 'white',
+                          }}
+                        />
+                      </div>
+
+                      {/* 收支类型 */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          类型
+                        </div>
+                        <div style={{ display: 'flex', gap: '8px' }}>
+                          <button
+                            className={`btn ${!parsed.billType || parsed.billType === 'expense' ? 'btn-primary' : 'btn-outline'}`}
+                            style={{ flex: 1, fontSize: '12px', padding: '8px' }}
+                            onClick={() => updateParsedBill(currentImageIndex, billIndex, 'billType', 'expense')}
+                          >
+                            支出
+                          </button>
+                          <button
+                            className={`btn ${parsed.billType === 'income' ? 'btn-primary' : 'btn-outline'}`}
+                            style={{ flex: 1, fontSize: '12px', padding: '8px' }}
+                            onClick={() => updateParsedBill(currentImageIndex, billIndex, 'billType', 'income')}
+                          >
+                            收入
+                          </button>
+                        </div>
+                      </div>
+
+                      {/* 单独分类选择 */}
+                      <div style={{ marginBottom: '12px' }}>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          分类
+                        </div>
+                        <select
+                          value={parsed.matchedCategoryId || ''}
+                          onChange={(e) => {
+                            const catId = e.target.value;
+                            const category = categories.find(c => c.id === catId);
+                            if (category) {
+                              setImageResults(prev => {
+                                const updated = [...prev];
+                                const imageResult = updated.find(r => r.imageIndex === currentImageIndex);
+                                if (imageResult && imageResult.parsedBills[billIndex]) {
+                                  imageResult.parsedBills[billIndex].matchedCategoryId = catId;
+                                  imageResult.parsedBills[billIndex].matchedCategoryName = category.name;
+                                  imageResult.parsedBills[billIndex].category = category.name;
+                                  imageResult.parsedBills[billIndex].billType = category.type || 'expense';
+                                  imageResult.parsedBills[billIndex].icon = category.icon;
+                                }
+                                return updated;
+                              });
+                            }
+                          }}
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            background: 'white',
+                            cursor: 'pointer',
+                            color: parsed.matchedCategoryId ? getCategoryColor(parsed.matchedCategoryId) : 'var(--text-muted)',
+                          }}
+                        >
+                          <option value="">选择分类...</option>
+                          <optgroup label="支出分类">
+                            {expenseCategories.map(cat => (
+                              <option key={cat.id} value={cat.id}>
+                                {cat.icon} {cat.name}
+                              </option>
+                            ))}
+                          </optgroup>
+                          {incomeCategories.length > 0 && (
+                            <optgroup label="收入分类">
+                              {incomeCategories.map(cat => (
+                                <option key={cat.id} value={cat.id}>
+                                  {cat.icon} {cat.name}
+                                </option>
+                              ))}
+                            </optgroup>
+                          )}
+                        </select>
+                      </div>
+
+                      {/* 描述 */}
+                      <div>
+                        <div style={{ fontSize: '12px', color: 'var(--text-muted)', marginBottom: '4px' }}>
+                          描述
+                        </div>
+                        <input
+                          type="text"
+                          value={parsed.description || ''}
+                          onChange={(e) =>
+                            updateParsedBill(currentImageIndex, billIndex, 'description', e.target.value)
+                          }
+                          style={{
+                            width: '100%',
+                            padding: '8px 12px',
+                            border: '1px solid var(--border-color)',
+                            borderRadius: '8px',
+                            fontSize: '14px',
+                            background: 'white',
+                          }}
+                        />
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* 切换图片提示 */}
                 {files.length > 1 && (
-                  <div style={{ 
-                    fontSize: '12px', 
-                    color: '#666', 
-                    marginTop: '8px',
-                    padding: '8px',
-                    background: '#f0f0f0',
-                    borderRadius: '4px',
-                    textAlign: 'center'
+                  <div style={{
+                    fontSize: '12px',
+                    color: 'var(--text-secondary)',
+                    marginTop: '16px',
+                    padding: '12px',
+                    background: 'var(--bg-primary)',
+                    borderRadius: '8px',
+                    textAlign: 'center',
                   }}>
-                    共 {files.length} 张图片，点击上方缩略图切换查看
+                    点击上方缩略图切换查看其他图片的识别结果
                   </div>
                 )}
               </div>
@@ -599,13 +761,17 @@ function ImportPage() {
 
             {/* 操作按钮 */}
             <div style={{ display: 'flex', gap: '12px' }}>
-              {parsedBills.length === 0 ? (
+              {imageResults.length === 0 ? (
                 <Button
                   block
                   color="primary"
                   size="large"
                   loading={isProcessing}
                   onClick={handleOCR}
+                  style={{
+                    background: 'var(--primary-color)',
+                    borderRadius: '24px',
+                  }}
                 >
                   开始识别
                 </Button>
@@ -613,11 +779,13 @@ function ImportPage() {
                 <>
                   <Button
                     block
-                    color="default"
                     size="large"
                     onClick={() => {
-                      setParsedBills([]);
-                      setOcrResults([]);
+                      setImageResults([]);
+                    }}
+                    style={{
+                      borderRadius: '24px',
+                      border: '1px solid var(--border-color)',
                     }}
                   >
                     重新识别
@@ -628,8 +796,12 @@ function ImportPage() {
                     size="large"
                     loading={isSaving}
                     onClick={handleSave}
+                    style={{
+                      background: 'var(--primary-color)',
+                      borderRadius: '24px',
+                    }}
                   >
-                    保存 ({parsedBills.length})
+                    保存 ({allParsedBills.length})
                   </Button>
                 </>
               )}
@@ -641,15 +813,6 @@ function ImportPage() {
       <BottomNav />
     </div>
   );
-  
-  // 辅助函数：计算每个图片的起始索引
-  function getStartIndex(imageIndex: number): number {
-    let count = 0;
-    for (let i = 0; i < imageIndex && i < ocrResults.length; i++) {
-      count += parseBillText(ocrResults[i].text).length;
-    }
-    return count;
-  }
 }
 
 export default ImportPage;

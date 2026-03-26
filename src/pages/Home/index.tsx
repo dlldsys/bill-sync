@@ -17,6 +17,9 @@ function HomePage() {
   const [isSelectMode, setIsSelectMode] = useState(false);
   const longPressTimer = useRef<number | null>(null);
 
+  // 检测是否为手机端
+  const isMobile = /Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+
   // 获取今日消费统计
   const todayStats = useMemo(() => {
     const today = getToday();
@@ -52,13 +55,14 @@ function HomePage() {
     const category = categories.find((c) => c.id === categoryId);
     return {
       icon: category?.icon || '📦',
-      color: category?.color || '#85929E',
+      color: category?.color || '#0abfb6',
       name: category?.name || '未分类',
     };
   };
 
-  // 长按开始
+  // 长按开始（仅手机端）
   const handleLongPressStart = (billId: string) => {
+    if (!isMobile) return;
     longPressTimer.current = window.setTimeout(() => {
       setIsSelectMode(true);
       setSelectedIds(new Set([billId]));
@@ -74,8 +78,11 @@ function HomePage() {
   };
 
   // 切换选中
-  const toggleSelect = (billId: string) => {
-    if (!isSelectMode) return;
+  const toggleSelect = (billId: string, e?: React.MouseEvent | React.TouchEvent) => {
+    e?.stopPropagation();
+    if (!isSelectMode) {
+      setIsSelectMode(true);
+    }
     const newSelected = new Set(selectedIds);
     if (newSelected.has(billId)) {
       newSelected.delete(billId);
@@ -86,6 +93,12 @@ function HomePage() {
       newSelected.add(billId);
     }
     setSelectedIds(newSelected);
+  };
+
+  // 点击 checkbox
+  const handleCheckboxClick = (billId: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    toggleSelect(billId, e);
   };
 
   // 点击记录
@@ -122,21 +135,41 @@ function HomePage() {
 
   return (
     <div className="page">
-      {/* 头部 */}
+      {/* 头部 - 参考图片4风格 */}
       <div className="page-header">
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-          <h1>账单</h1>
-          {isSelectMode && (
+        <div style={{
+          display: 'flex',
+          justifyContent: 'space-between',
+          alignItems: 'center',
+        }}>
+          <h1>今日收支</h1>
+          {isSelectMode ? (
             <button
               onClick={cancelSelect}
               style={{
                 background: 'none',
                 border: 'none',
-                color: 'white',
+                color: 'var(--primary-color)',
                 fontSize: '14px',
+                cursor: 'pointer',
+                fontWeight: 500,
               }}
             >
               取消
+            </button>
+          ) : (
+            <button
+              onClick={() => navigate('/settings')}
+              style={{
+                background: 'none',
+                border: 'none',
+                color: 'var(--primary-color)',
+                fontSize: '14px',
+                cursor: 'pointer',
+                fontWeight: 500,
+              }}
+            >
+              筛选
             </button>
           )}
         </div>
@@ -144,25 +177,65 @@ function HomePage() {
 
       {/* 内容 */}
       <div className="page-content">
-        {/* 统计卡片 */}
-        <div className="stats-card">
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <div>
-              <div className="stats-title">今日消费</div>
-              <div className="stats-value">{formatAmount(todayStats.total)}</div>
-              <div className="stats-sub">{todayStats.count} 笔</div>
+        {/* 收支结余卡片 - 参考图片4风格 */}
+        <div className="card" style={{
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'space-between',
+          padding: '20px',
+          marginBottom: '16px',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
+            <div style={{
+              width: '48px',
+              height: '48px',
+              borderRadius: '12px',
+              background: 'var(--primary-light)',
+              display: 'flex',
+              alignItems: 'center',
+              justifyContent: 'center',
+              fontSize: '24px',
+            }}>
+              💰
             </div>
-            <div style={{ textAlign: 'right' }}>
-              <div className="stats-title">本月消费</div>
-              <div className="stats-value">{formatAmount(monthStats.total)}</div>
-              <div className="stats-sub">{monthStats.count} 笔</div>
+            <div>
+              <div style={{
+                fontSize: '18px',
+                fontWeight: 600,
+                color: 'var(--text-primary)',
+              }}>
+                收支结余
+              </div>
+              <div style={{
+                fontSize: '14px',
+                color: 'var(--text-secondary)',
+                marginTop: '4px',
+              }}>
+                本月 {formatAmount(monthStats.total)}
+              </div>
             </div>
           </div>
+          {!isSelectMode && (
+            <button
+              onClick={() => navigate('/manual')}
+              className="btn btn-primary"
+              style={{
+                padding: '10px 24px',
+                fontSize: '14px',
+              }}
+            >
+              新增
+            </button>
+          )}
         </div>
 
         {/* 快捷操作 */}
         {!isSelectMode && (
-          <div style={{ display: 'flex', gap: '12px', marginBottom: '16px' }}>
+          <div style={{
+            display: 'flex',
+            gap: '12px',
+            marginBottom: '16px',
+          }}>
             <button
               className="btn btn-primary"
               style={{ flex: 1 }}
@@ -190,14 +263,18 @@ function HomePage() {
             padding: '12px 16px',
             borderRadius: '12px',
             marginBottom: '16px',
-            boxShadow: '0 2px 8px rgba(0,0,0,0.06)',
+            boxShadow: 'var(--shadow-sm)',
+            border: '1px solid var(--border-light)',
           }}>
-            <span style={{ fontSize: '14px', color: '#333' }}>
+            <span style={{ fontSize: '14px', color: 'var(--text-primary)' }}>
               已选择 {selectedIds.size} 条
             </span>
             <button
               className="btn btn-primary"
-              style={{ padding: '8px 16px' }}
+              style={{
+                padding: '8px 16px',
+                fontSize: '13px',
+              }}
               onClick={handleDeleteSelected}
             >
               删除
@@ -209,15 +286,15 @@ function HomePage() {
         {!isSelectMode && Object.keys(groupedBills).length > 0 && (
           <div style={{
             fontSize: '12px',
-            color: '#999',
+            color: 'var(--text-muted)',
             textAlign: 'center',
             marginBottom: '12px',
           }}>
-            点击记录编辑 · 长按多选删除
+            {isMobile ? '点击记录编辑 · 长按多选删除' : '点击记录编辑 · 点击checkbox多选删除'}
           </div>
         )}
 
-        {/* 账单列表 */}
+        {/* 账单列表 - 参考图片4风格 */}
         {Object.keys(groupedBills).length === 0 ? (
           <div className="empty-state">
             <div className="empty-icon">📝</div>
@@ -232,75 +309,141 @@ function HomePage() {
             </div>
           </div>
         ) : (
-          Object.entries(groupedBills).map(([date, dateBills]) => (
-            <div key={date} style={{ marginBottom: '16px' }}>
-              <div
-                style={{
+          <div className="card" style={{ padding: '0' }}>
+            {Object.entries(groupedBills)
+              .sort(([dateA], [dateB]) => dateB.localeCompare(dateA))
+              .map(([date, dateBills], groupIndex) => (
+              <div key={date}>
+                {/* 日期分隔 */}
+                <div style={{
                   fontSize: '13px',
-                  color: '#999',
-                  marginBottom: '8px',
-                  padding: '0 4px',
-                }}
-              >
-                {formatDate(date)}
-              </div>
-              {dateBills.map((bill) => {
-                const catInfo = getCategoryInfo(bill.category);
-                const isSelected = selectedIds.has(bill.id);
-                return (
-                  <div
-                    key={bill.id}
-                    className="bill-card"
-                    onClick={() => handleClick(bill)}
-                    onTouchStart={() => handleLongPressStart(bill.id)}
-                    onTouchEnd={handleLongPressEnd}
-                    onTouchCancel={handleLongPressEnd}
-                    onMouseDown={() => handleLongPressStart(bill.id)}
-                    onMouseUp={handleLongPressEnd}
-                    onMouseLeave={handleLongPressEnd}
-                    style={{
-                      cursor: 'pointer',
-                      borderLeft: isSelected ? '3px solid #667eea' : undefined,
-                      background: isSelected ? '#f0f5ff' : undefined,
-                    }}
-                  >
-                    {/* 多选框 */}
-                    {isSelectMode && (
+                  color: 'var(--text-muted)',
+                  padding: '12px 16px',
+                  background: 'var(--bg-primary)',
+                  fontWeight: 500,
+                }}>
+                  {formatDate(date)}
+                </div>
+                {/* 账单列表 */}
+                {dateBills.map((bill, billIndex) => {
+                  const catInfo = getCategoryInfo(bill.category);
+                  const isSelected = selectedIds.has(bill.id);
+                  const displayIndex = groupIndex * 100 + billIndex + 1;
+
+                  return (
+                    <div
+                      key={bill.id}
+                      className="list-item"
+                      onClick={() => handleClick(bill)}
+                      onTouchStart={() => handleLongPressStart(bill.id)}
+                      onTouchEnd={handleLongPressEnd}
+                      onTouchCancel={handleLongPressEnd}
+                      onMouseDown={() => handleLongPressStart(bill.id)}
+                      onMouseUp={handleLongPressEnd}
+                      onMouseLeave={handleLongPressEnd}
+                      style={{
+                        cursor: 'pointer',
+                        background: isSelected ? 'var(--primary-light)' : 'white',
+                        margin: '0 16px',
+                        padding: '16px 0',
+                      }}
+                    >
+                      {/* 多选框 */}
+                      {isSelectMode && (
+                        <div
+                          onClick={(e) => handleCheckboxClick(bill.id, e)}
+                          style={{
+                            width: '20px',
+                            height: '20px',
+                            borderRadius: '50%',
+                            border: `2px solid ${isSelected ? 'var(--primary-color)' : 'var(--border-color)'}`,
+                            background: isSelected ? 'var(--primary-color)' : 'transparent',
+                            marginRight: '12px',
+                            display: 'flex',
+                            alignItems: 'center',
+                            justifyContent: 'center',
+                            cursor: 'pointer',
+                            flexShrink: 0,
+                          }}
+                        >
+                          {isSelected && (
+                            <span style={{ color: 'white', fontSize: '12px' }}>✓</span>
+                          )}
+                        </div>
+                      )}
+
+                      {/* 序号 */}
+                      {!isSelectMode && (
+                        <span style={{
+                          width: '28px',
+                          fontSize: '15px',
+                          color: 'var(--text-secondary)',
+                          flexShrink: 0,
+                        }}>
+                          {displayIndex}
+                        </span>
+                      )}
+
+                      {/* 图标和描述 */}
                       <div style={{
-                        width: '20px',
-                        height: '20px',
-                        borderRadius: '50%',
-                        border: `2px solid ${isSelected ? '#667eea' : '#ddd'}`,
-                        background: isSelected ? '#667eea' : 'transparent',
-                        marginRight: '12px',
                         display: 'flex',
                         alignItems: 'center',
-                        justifyContent: 'center',
+                        gap: '12px',
+                        flex: 1,
+                        minWidth: 0,
                       }}>
-                        {isSelected && (
-                          <span style={{ color: 'white', fontSize: '12px' }}>✓</span>
-                        )}
+                        <div style={{
+                          width: '36px',
+                          height: '36px',
+                          borderRadius: '8px',
+                          background: catInfo.color + '15',
+                          display: 'flex',
+                          alignItems: 'center',
+                          justifyContent: 'center',
+                          fontSize: '18px',
+                          flexShrink: 0,
+                        }}>
+                          {catInfo.icon}
+                        </div>
+                        <div style={{
+                          overflow: 'hidden',
+                          textOverflow: 'ellipsis',
+                          whiteSpace: 'nowrap',
+                        }}>
+                          <div style={{
+                            fontSize: '15px',
+                            color: 'var(--text-primary)',
+                            fontWeight: 500,
+                          }}>
+                            {bill.description}
+                          </div>
+                          <div style={{
+                            fontSize: '12px',
+                            color: 'var(--text-muted)',
+                            marginTop: '2px',
+                          }}>
+                            {catInfo.name}
+                          </div>
+                        </div>
                       </div>
-                    )}
-                    <div
-                      className="bill-icon"
-                      style={{ backgroundColor: catInfo.color + '20' }}
-                    >
-                      {catInfo.icon}
+
+                      {/* 金额 */}
+                      <div style={{
+                        fontSize: '15px',
+                        fontWeight: 600,
+                        color: bill.amount < 0 ? 'var(--accent-success)' : 'var(--text-primary)',
+                        flexShrink: 0,
+                        marginLeft: '12px',
+                      }}>
+                        {bill.amount < 0 ? '+' : '-'}
+                        ¥{formatAmount(Math.abs(bill.amount))}
+                      </div>
                     </div>
-                    <div className="bill-info">
-                      <div className="bill-description">{bill.description}</div>
-                      <div className="bill-meta">{catInfo.name}</div>
-                    </div>
-                    <div className={`bill-amount ${bill.amount < 0 ? 'income' : ''}`}>
-                      {bill.amount < 0 ? '+' : '-'}
-                      {formatAmount(Math.abs(bill.amount))}
-                    </div>
-                  </div>
-                );
-              })}
-            </div>
-          ))
+                  );
+                })}
+              </div>
+            ))}
+          </div>
         )}
       </div>
 
