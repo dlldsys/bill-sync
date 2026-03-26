@@ -4,6 +4,7 @@ import { Button, Toast } from 'antd-mobile';
 import BottomNav from '../../components/BottomNav';
 import { useBillStore, useCategoryStore } from '../../stores';
 import { recognizeText, parseBillTextWithAutoMatch, parseBillText, type ParseBillResult } from '../../services/ocr';
+import { matchWithExistingBills, type MatchResult } from '../../services/dedup';
 import { generateId, now, getDeviceId, formatDate } from '../../utils';
 import type { BillRecord, OCRResult } from '../../types';
 
@@ -17,6 +18,7 @@ interface ImageParseResult {
 function ImportPage() {
   const navigate = useNavigate();
   const importBills = useBillStore((state) => state.importBills);
+  const existingBills = useBillStore((state) => state.bills);
   const categories = useCategoryStore((state) => state.categories);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
@@ -28,6 +30,12 @@ function ImportPage() {
   const [isSaving, setIsSaving] = useState(false);
   const [currentImageIndex, setCurrentImageIndex] = useState(0);
   const [selectedCategoryId, setSelectedCategoryId] = useState<string>('');
+
+  // 归档匹配相关状态
+  const [showMatchModal, setShowMatchModal] = useState(false);
+  const [matchMode, setMatchMode] = useState<'exact' | 'fuzzy'>('exact');
+  const [matchResults, setMatchResults] = useState<{ matched: MatchResult[]; newOnly: MatchResult[] } | null>(null);
+  const [isMatching, setIsMatching] = useState(false);
 
   // 分离支出和收入分类
   const expenseCategories = categories.filter(c => !c.type || c.type === 'expense');
@@ -238,6 +246,55 @@ function ImportPage() {
     if (!categoryId) return '#999';
     const matched = categories.find(c => c.id === categoryId);
     return matched?.color || '#999';
+  };
+
+  // 匹配已有归档数据
+  const handleMatchWithExisting = async () => {
+    if (allParsedBills.length === 0) {
+      Toast.show('没有可匹配的记录');
+      return;
+    }
+    setShowMatchModal(true);
+    setMatchResults(null);
+  };
+
+  // 执行匹配
+  const executeMatch = async () => {
+    setIsMatching(true);
+    try {
+      const results = matchWithExistingBills(existingBills, allParsedBills, matchMode, 0.05);
+      setMatchResults(results);
+      Toast.show(`匹配完成：${results.matched.length} 条重复，${results.newOnly.length} 条新记录`);
+    } catch (error) {
+      console.error('Match error:', error);
+      Toast.show('匹配失败');
+    } finally {
+      setIsMatching(false);
+    }
+  };
+
+  // 应用匹配结果（删除重复项）
+  const applyMatchResults = () => {
+    if (!matchResults) return;
+
+    // 根据匹配结果过滤账单
+    const newOnlyBills = matchResults.newOnly.map(m => m.newBill);
+
+    // 按图片分组更新状态
+    const updatedImageResults = imageResults.map(imageResult => ({
+      ...imageResult,
+      parsedBills: imageResult.parsedBills.filter(bill =>
+        newOnlyBills.some(newBill =>
+          newBill.merchant === bill.merchant &&
+          newBill.amount === bill.amount &&
+          newBill.date === bill.date
+        )
+      )
+    }));
+
+    setImageResults(updatedImageResults);
+    setShowMatchModal(false);
+    Toast.show(`已过滤 ${matchResults.matched.length} 条重复记录`);
   };
 
   // 获取当前图片的识别结果
@@ -680,7 +737,6 @@ function ImportPage() {
                                   imageResult.parsedBills[billIndex].matchedCategoryName = category.name;
                                   imageResult.parsedBills[billIndex].category = category.name;
                                   imageResult.parsedBills[billIndex].billType = category.type || 'expense';
-                                  imageResult.parsedBills[billIndex].icon = category.icon;
                                 }
                                 return updated;
                               });
@@ -760,7 +816,7 @@ function ImportPage() {
             )}
 
             {/* 操作按钮 */}
-            <div style={{ display: 'flex', gap: '12px' }}>
+            <div style={{ display: 'flex', gap: '12px', flexWrap: 'wrap' }}>
               {imageResults.length === 0 ? (
                 <Button
                   block
@@ -792,6 +848,18 @@ function ImportPage() {
                   </Button>
                   <Button
                     block
+                    size="large"
+                    onClick={handleMatchWithExisting}
+                    style={{
+                      borderRadius: '24px',
+                      border: '1px solid var(--accent-warning)',
+                      color: 'var(--accent-warning)',
+                    }}
+                  >
+                    匹配归档 ({matchResults ? `${matchResults.matched.length}重复` : '?'})
+                  </Button>
+                  <Button
+                    block
                     color="primary"
                     size="large"
                     loading={isSaving}
@@ -809,6 +877,188 @@ function ImportPage() {
           </>
         )}
       </div>
+
+      {/* 匹配弹窗 */}
+      {showMatchModal && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+          padding: '20px',
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '20px',
+            width: '100%',
+            maxWidth: '400px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+          }}>
+            <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px' }}>
+              匹配已有归档数据
+            </div>
+
+            {/* 匹配模式选择 */}
+            {!matchResults && (
+              <>
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{ fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>
+                    选择匹配模式
+                  </div>
+                  <div style={{ display: 'flex', gap: '8px' }}>
+                    <button
+                      className={`btn ${matchMode === 'exact' ? 'btn-primary' : 'btn-outline'}`}
+                      style={{ flex: 1 }}
+                      onClick={() => setMatchMode('exact')}
+                    >
+                      精确匹配
+                    </button>
+                    <button
+                      className={`btn ${matchMode === 'fuzzy' ? 'btn-primary' : 'btn-outline'}`}
+                      style={{ flex: 1 }}
+                      onClick={() => setMatchMode('fuzzy')}
+                    >
+                      模糊匹配
+                    </button>
+                  </div>
+                  <div style={{ fontSize: '12px', color: '#999', marginTop: '8px' }}>
+                    {matchMode === 'exact' ? '金额和日期完全相同才算重复' : '金额在±5%范围内也算重复'}
+                  </div>
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
+                  <Button
+                    block
+                    onClick={() => setShowMatchModal(false)}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    block
+                    color="primary"
+                    loading={isMatching}
+                    onClick={executeMatch}
+                  >
+                    开始匹配
+                  </Button>
+                </div>
+              </>
+            )}
+
+            {/* 匹配结果 */}
+            {matchResults && (
+              <>
+                <div style={{ marginBottom: '16px' }}>
+                  <div style={{
+                    padding: '12px',
+                    background: 'var(--bg-primary)',
+                    borderRadius: '8px',
+                    marginBottom: '12px',
+                  }}>
+                    <div style={{ fontSize: '14px', color: '#666', marginBottom: '8px' }}>
+                      匹配结果统计
+                    </div>
+                    <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: '16px' }}>
+                      <span style={{ color: 'var(--accent-danger)' }}>
+                        {matchResults.matched.length} 条重复
+                      </span>
+                      <span style={{ color: 'var(--accent-success)' }}>
+                        {matchResults.newOnly.length} 条新记录
+                      </span>
+                    </div>
+                  </div>
+
+                  {/* 重复记录列表 */}
+                  {matchResults.matched.length > 0 && (
+                    <div style={{ marginBottom: '12px' }}>
+                      <div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '8px', color: 'var(--accent-danger)' }}>
+                        重复记录（将被过滤）
+                      </div>
+                      <div style={{ maxHeight: '200px', overflow: 'auto' }}>
+                        {matchResults.matched.map((item, index) => (
+                          <div key={index} style={{
+                            padding: '8px',
+                            background: '#fff5f5',
+                            borderRadius: '6px',
+                            marginBottom: '6px',
+                            fontSize: '13px',
+                          }}>
+                            <div style={{ fontWeight: '500' }}>
+                              {item.newBill.merchant || '未知商家'} - ¥{item.newBill.amount.toFixed(2)}
+                            </div>
+                            <div style={{ color: '#999', fontSize: '12px' }}>
+                              {item.newBill.date?.split('T')[0]} · {item.matchType === 'exact' ? '精确匹配' : '模糊匹配'}
+                            </div>
+                            {item.existingBill && (
+                              <div style={{ fontSize: '11px', color: '#666', marginTop: '4px' }}>
+                                已有: {item.existingBill.description} - ¥{item.existingBill.amount.toFixed(2)}
+                              </div>
+                            )}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* 新记录列表 */}
+                  {matchResults.newOnly.length > 0 && (
+                    <div>
+                      <div style={{ fontSize: '14px', fontWeight: '500', marginBottom: '8px', color: 'var(--accent-success)' }}>
+                        新记录（将被保存）
+                      </div>
+                      <div style={{ maxHeight: '150px', overflow: 'auto' }}>
+                        {matchResults.newOnly.slice(0, 5).map((item, index) => (
+                          <div key={index} style={{
+                            padding: '6px',
+                            background: '#f0fff0',
+                            borderRadius: '6px',
+                            marginBottom: '4px',
+                            fontSize: '12px',
+                          }}>
+                            {item.newBill.merchant || '未知商家'} - ¥{item.newBill.amount.toFixed(2)}
+                          </div>
+                        ))}
+                        {matchResults.newOnly.length > 5 && (
+                          <div style={{ fontSize: '12px', color: '#999', textAlign: 'center' }}>
+                            还有 {matchResults.newOnly.length - 5} 条...
+                          </div>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div style={{ display: 'flex', gap: '8px', marginTop: '16px' }}>
+                  <Button
+                    block
+                    onClick={() => {
+                      setShowMatchModal(false);
+                      setMatchResults(null);
+                    }}
+                  >
+                    取消
+                  </Button>
+                  <Button
+                    block
+                    color="primary"
+                    onClick={applyMatchResults}
+                  >
+                    过滤并保存
+                  </Button>
+                </div>
+              </>
+            )}
+          </div>
+        </div>
+      )}
 
       <BottomNav />
     </div>

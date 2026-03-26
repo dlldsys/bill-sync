@@ -231,26 +231,54 @@ function HomePage() {
 
         {/* 快捷操作 */}
         {!isSelectMode && (
-          <div style={{
-            display: 'flex',
-            gap: '12px',
-            marginBottom: '16px',
-          }}>
-            <button
-              className="btn btn-primary"
-              style={{ flex: 1 }}
-              onClick={() => navigate('/manual')}
-            >
-              + 记一笔
-            </button>
-            <button
-              className="btn btn-outline"
-              style={{ flex: 1 }}
-              onClick={() => navigate('/import')}
-            >
-              📷 拍照识别
-            </button>
-          </div>
+          <>
+            <div style={{
+              display: 'flex',
+              gap: '12px',
+              marginBottom: '16px',
+            }}>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                onClick={() => navigate('/manual')}
+              >
+                + 记一笔
+              </button>
+              <button
+                className="btn btn-outline"
+                style={{ flex: 1 }}
+                onClick={() => navigate('/import')}
+              >
+                📷 拍照识别
+              </button>
+            </div>
+            {/* 电脑端多选按钮 */}
+            {!isMobile && Object.keys(groupedBills).length > 0 && (
+              <div style={{
+                display: 'flex',
+                justifyContent: 'center',
+                marginBottom: '12px',
+              }}>
+                <button
+                  onClick={() => setIsSelectMode(true)}
+                  style={{
+                    background: 'rgba(10, 191, 202, 0.1)',
+                    border: '1px solid var(--primary-color)',
+                    borderRadius: '20px',
+                    padding: '8px 20px',
+                    color: 'var(--primary-color)',
+                    fontSize: '13px',
+                    cursor: 'pointer',
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: '6px',
+                  }}
+                >
+                  ☑️ 批量选择
+                </button>
+              </div>
+            )}
+          </>
         )}
 
         {/* 多选操作栏 */}

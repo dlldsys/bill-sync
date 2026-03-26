@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { Switch, Toast, Button } from 'antd-mobile';
 import BottomNav from '../../components/BottomNav';
 import { useCategoryStore } from '../../stores';
-import { getAllRules, addRule, deleteRule, toggleRule } from '../../services/categoryRules';
+import { getAllRules, addRule, deleteRule, toggleRule, updateRule } from '../../services/categoryRules';
 import type { CategoryRule } from '../../types';
 
 function CategoryRulesPage() {
@@ -12,7 +12,9 @@ function CategoryRulesPage() {
   
   const [rules, setRules] = useState<CategoryRule[]>([]);
   const [showModal, setShowModal] = useState(false);
+  const [showEditModal, setShowEditModal] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [editingRule, setEditingRule] = useState<CategoryRule | null>(null);
   
   // 新规则表单
   const [newKeyword, setNewKeyword] = useState('');
@@ -167,6 +169,27 @@ function CategoryRulesPage() {
                       checked={rule.enabled}
                       onChange={() => handleToggleRule(rule)}
                     />
+                    <button
+                      onClick={() => {
+                        setEditingRule(rule);
+                        setNewKeyword(rule.keyword);
+                        setNewMatchField(rule.matchField);
+                        setNewMatchType(rule.matchType);
+                        setNewCategoryId(rule.categoryId);
+                        setNewPriority(rule.priority);
+                        setShowEditModal(true);
+                      }}
+                      style={{
+                        background: 'none',
+                        border: 'none',
+                        color: '#1890ff',
+                        fontSize: '18px',
+                        cursor: 'pointer',
+                        padding: '4px',
+                      }}
+                    >
+                      ✏️
+                    </button>
                     <button
                       onClick={() => handleDeleteRule(rule)}
                       style={{
@@ -365,6 +388,202 @@ function CategoryRulesPage() {
                 disabled={loading}
               >
                 {loading ? '添加中...' : '添加'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* 编辑规则弹窗 */}
+      {showEditModal && editingRule && (
+        <div style={{
+          position: 'fixed',
+          top: 0,
+          left: 0,
+          right: 0,
+          bottom: 0,
+          background: 'rgba(0,0,0,0.5)',
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          zIndex: 1000,
+        }}>
+          <div style={{
+            background: 'white',
+            borderRadius: '12px',
+            padding: '20px',
+            width: '90%',
+            maxWidth: '360px',
+            maxHeight: '80vh',
+            overflow: 'auto',
+          }}>
+            <div style={{ fontSize: '18px', fontWeight: '600', marginBottom: '16px' }}>
+              编辑分类规则
+            </div>
+
+            {/* 关键词 */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>
+                关键词 *
+              </div>
+              <input
+                type="text"
+                value={newKeyword}
+                onChange={(e) => setNewKeyword(e.target.value)}
+                placeholder="输入匹配关键词"
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                }}
+              />
+            </div>
+
+            {/* 匹配字段 */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>
+                匹配字段
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className={`btn ${newMatchField === 'description' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setNewMatchField('description')}
+                >
+                  描述
+                </button>
+                <button
+                  className={`btn ${newMatchField === 'merchant' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setNewMatchField('merchant')}
+                >
+                  商家
+                </button>
+              </div>
+            </div>
+
+            {/* 匹配方式 */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>
+                匹配方式
+              </div>
+              <div style={{ display: 'flex', gap: '8px' }}>
+                <button
+                  className={`btn ${newMatchType === 'contains' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setNewMatchType('contains')}
+                >
+                  模糊匹配
+                </button>
+                <button
+                  className={`btn ${newMatchType === 'regex' ? 'btn-primary' : 'btn-outline'}`}
+                  style={{ flex: 1 }}
+                  onClick={() => setNewMatchType('regex')}
+                >
+                  正则表达式
+                </button>
+              </div>
+            </div>
+
+            {/* 分类选择 */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>
+                目标分类 *
+              </div>
+              <select
+                value={newCategoryId}
+                onChange={(e) => setNewCategoryId(e.target.value)}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                  background: 'white',
+                }}
+              >
+                <option value="">请选择分类</option>
+                {categories.map((cat) => (
+                  <option key={cat.id} value={cat.id}>
+                    {cat.icon} {cat.name} ({cat.type === 'expense' ? '支出' : '收入'})
+                  </option>
+                ))}
+              </select>
+            </div>
+
+            {/* 优先级 */}
+            <div style={{ marginBottom: '16px' }}>
+              <div style={{ fontSize: '14px', marginBottom: '8px', fontWeight: '500' }}>
+                优先级
+              </div>
+              <input
+                type="number"
+                value={newPriority}
+                onChange={(e) => setNewPriority(parseInt(e.target.value) || 0)}
+                placeholder="数字越大优先级越高"
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  border: '1px solid #ddd',
+                  borderRadius: '8px',
+                  fontSize: '14px',
+                }}
+              />
+            </div>
+
+            {/* 按钮组 */}
+            <div style={{ display: 'flex', gap: '8px', marginTop: '20px' }}>
+              <button
+                className="btn btn-outline"
+                style={{ flex: 1 }}
+                onClick={() => {
+                  setShowEditModal(false);
+                  setEditingRule(null);
+                  resetForm();
+                }}
+              >
+                取消
+              </button>
+              <button
+                className="btn btn-primary"
+                style={{ flex: 1 }}
+                onClick={async () => {
+                  if (!newKeyword.trim()) {
+                    Toast.show({ content: '请输入关键词', icon: 'fail' });
+                    return;
+                  }
+                  if (!newCategoryId) {
+                    Toast.show({ content: '请选择分类', icon: 'fail' });
+                    return;
+                  }
+
+                  setLoading(true);
+                  try {
+                    await updateRule(editingRule.id, {
+                      keyword: newKeyword.trim(),
+                      matchField: newMatchField,
+                      matchType: newMatchType,
+                      categoryId: newCategoryId,
+                      priority: newPriority,
+                      updatedAt: new Date().toISOString(),
+                    });
+                    Toast.show({ content: '修改成功' });
+                    setShowEditModal(false);
+                    setEditingRule(null);
+                    resetForm();
+                    await loadRules();
+                  } catch (error) {
+                    console.error('Failed to update rule:', error);
+                    Toast.show({ content: '修改失败', icon: 'fail' });
+                  } finally {
+                    setLoading(false);
+                  }
+                }}
+                disabled={loading}
+              >
+                {loading ? '保存中...' : '保存'}
               </button>
             </div>
           </div>

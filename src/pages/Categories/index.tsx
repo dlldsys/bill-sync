@@ -16,6 +16,7 @@ function CategoriesPage() {
 
   const [showModal, setShowModal] = useState(false);
   const [editingCategory, setEditingCategory] = useState<Category | null>(null);
+  const [modalMode, setModalMode] = useState<'add-expense' | 'add-income' | 'edit'>('add-expense');
   const [formData, setFormData] = useState({
     name: '',
     icon: '📦',
@@ -27,13 +28,24 @@ function CategoriesPage() {
   const expenseCategories = categories.filter(c => !c.type || c.type === 'expense');
   const incomeCategories = categories.filter(c => c.type === 'income');
 
-  const openAddModal = () => {
+  // 打开添加支出分类弹窗
+  const openAddExpenseModal = () => {
+    setModalMode('add-expense');
     setEditingCategory(null);
-    setFormData({ name: '', icon: '📦', color: '#85929E', type: 'expense' });
+    setFormData({ name: '', icon: '📦', color: '#FF6B6B', type: 'expense' });
+    setShowModal(true);
+  };
+
+  // 打开添加收入分类弹窗
+  const openAddIncomeModal = () => {
+    setModalMode('add-income');
+    setEditingCategory(null);
+    setFormData({ name: '', icon: '💰', color: '#52C41A', type: 'income' });
     setShowModal(true);
   };
 
   const openEditModal = (category: Category) => {
+    setModalMode('edit');
     setEditingCategory(category);
     setFormData({
       name: category.name,
@@ -261,20 +273,37 @@ function CategoriesPage() {
           </div>
         </div>
 
-        {/* 添加按钮 */}
-        <button
-          className="btn btn-primary btn-block"
-          style={{ marginTop: '16px' }}
-          onClick={openAddModal}
-        >
-          + 添加分类
-        </button>
+        {/* 添加按钮 - 拆分为两个 */}
+        <div style={{ display: 'flex', gap: '12px', marginTop: '16px' }}>
+          <button
+            className="btn btn-primary"
+            style={{
+              flex: 1,
+              background: '#FF6B6B',
+              border: 'none',
+            }}
+            onClick={openAddExpenseModal}
+          >
+            + 添加支出分类
+          </button>
+          <button
+            className="btn btn-primary"
+            style={{
+              flex: 1,
+              background: '#52C41A',
+              border: 'none',
+            }}
+            onClick={openAddIncomeModal}
+          >
+            + 添加收入分类
+          </button>
+        </div>
       </div>
 
       {/* 模态框 */}
       <Modal
         visible={showModal}
-        title={editingCategory ? '编辑分类' : '添加分类'}
+        title={editingCategory ? '编辑分类' : (modalMode === 'add-expense' ? '添加支出分类' : '添加收入分类')}
         closeOnAction
         onClose={() => setShowModal(false)}
         actions={[
@@ -290,26 +319,32 @@ function CategoriesPage() {
         }}
         content={
           <div style={{ padding: '16px 0' }}>
-            {/* 类型选择 */}
-            <div className="form-group">
-              <label className="form-label">分类类型</label>
-              <div style={{ display: 'flex', gap: '8px' }}>
-                <button
-                  className={`btn ${formData.type === 'expense' ? 'btn-primary' : 'btn-outline'}`}
-                  style={{ flex: 1 }}
-                  onClick={() => setFormData({ ...formData, type: 'expense' })}
-                >
-                  支出
-                </button>
-                <button
-                  className={`btn ${formData.type === 'income' ? 'btn-primary' : 'btn-outline'}`}
-                  style={{ flex: 1 }}
-                  onClick={() => setFormData({ ...formData, type: 'income' })}
-                >
-                  收入
-                </button>
+            {/* 编辑模式下显示类型（不可修改），添加模式下不显示类型选择 */}
+            {modalMode === 'edit' && (
+              <div className="form-group">
+                <label className="form-label">分类类型</label>
+                <div style={{
+                  display: 'flex',
+                  gap: '8px',
+                  padding: '8px 12px',
+                  background: '#f5f5f5',
+                  borderRadius: '8px',
+                  color: '#666',
+                }}>
+                  <span style={{
+                    flex: 1,
+                    textAlign: 'center',
+                    fontWeight: formData.type === 'expense' ? '600' : '400',
+                    color: formData.type === 'expense' ? '#FF6B6B' : '#999',
+                  }}>
+                    {formData.type === 'expense' ? '支出' : '收入'}
+                  </span>
+                  <span style={{ color: '#999', fontSize: '12px' }}>
+                    （编辑时不可修改类型）
+                  </span>
+                </div>
               </div>
-            </div>
+            )}
 
             {/* 名称 */}
             <div className="form-group">
