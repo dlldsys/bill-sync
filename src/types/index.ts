@@ -79,7 +79,18 @@ export interface BackupData {
 export interface OCRResult {
   text: string;
   confidence: number;
+  engine?: string;
+  processTime?: number;
+  words?: Array<{
+    text: string;
+    confidence: number;
+    bbox?: number[];
+  }>;
+  error?: string;
 }
+
+// 账单类型
+export type BillType = 'alipay' | 'wechat' | 'bank' | 'other';
 
 // 解析后的账单
 export interface ParsedBill {

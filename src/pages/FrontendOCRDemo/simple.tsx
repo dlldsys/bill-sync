@@ -1,5 +1,5 @@
 import React, { useState, useRef } from 'react';
-import { useOCR, OCREngine } from '../hooks/useFrontendOCR';
+import { useOCR, OCREngine } from '../../hooks/useFrontendOCR';
 
 const FrontendOCRDemo: React.FC = () => {
   const fileInputRef = useRef<HTMLInputElement>(null);

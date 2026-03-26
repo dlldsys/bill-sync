@@ -1,5 +1,5 @@
 import * as Tesseract from 'tesseract.js';
-import type { OCRResult, ParsedBill } from '../types';
+import type { OCRResult, ParsedBill, BillType } from '../types';
 import { autoMatchCategory } from './categoryRules';
 
 // OCR引擎枚举
@@ -25,6 +25,8 @@ interface MultiOCRResult {
   success: boolean;
   error?: string;
   provider?: string;
+  allResults?: MultiOCRResult[];
+  fusionReason?: string;
 }
 
 // OCR识别和解析逻辑 - 多引擎版本
@@ -80,7 +82,7 @@ export async function recognizeText(file: File, engine: OCREngine = OCREngine.HY
       text: '', 
       confidence: 0,
       engine: engine,
-      error: error.message
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -112,7 +114,7 @@ async function recognizeWithTesseract(file: File, onProgress?: (progress: number
       text: '',
       confidence: 0,
       success: false,
-      error: error.message
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -157,7 +159,7 @@ async function recognizeWithPaddleOCR(file: File, onProgress?: (progress: number
       text: '',
       confidence: 0,
       success: false,
-      error: error.message
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -202,7 +204,7 @@ async function recognizeWithEasyOCR(file: File, onProgress?: (progress: number) 
       text: '',
       confidence: 0,
       success: false,
-      error: error.message
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }
@@ -249,7 +251,7 @@ async function recognizeWithCloudOCR(file: File, provider: string = 'baidu', onP
       text: '',
       confidence: 0,
       success: false,
-      error: error.message,
+      error: error instanceof Error ? error.message : String(error),
       provider: provider
     };
   }
@@ -315,7 +317,7 @@ async function recognizeWithHybrid(file: File, onProgress?: (progress: number) =
       text: '',
       confidence: 0,
       success: false,
-      error: error.message
+      error: error instanceof Error ? error.message : String(error)
     };
   }
 }

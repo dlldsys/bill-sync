@@ -28,7 +28,7 @@ const settingsItems = [
 
 function SettingsPage() {
   const navigate = useNavigate();
-  const reloadBills = useBillStore((state) => state.reload);
+  const loadBills = useBillStore((state) => state.loadBills);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [importing, setImporting] = useState(false);
   const [showImportInfo, setShowImportInfo] = useState(false);
@@ -79,7 +79,7 @@ function SettingsPage() {
     try {
       const result = await importBackup(pendingFile, mode);
       Toast.show(`导入成功：${result.bills} 条账单，${result.categories} 个分类`);
-      await reloadBills();
+      await loadBills();
       setShowImportInfo(false);
       setPendingFile(null);
     } catch (error) {
